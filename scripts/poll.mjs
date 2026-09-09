@@ -136,6 +136,18 @@ for (const source of sources) {
     // saying every time rather than once, because it is the standing limit of
     // a source like this and not a transient condition.
     if (result.partial) console.log(`        nothing marked gone — ${result.partial}`);
+
+    // Condition words this source used that nothing maps to a tier. Worth
+    // saying, because a listing whose condition is unmapped is valued against
+    // the cheapest tier with its confidence halved — the same treatment as one
+    // whose seller said nothing at all — and the fix is one row.
+    if (result.unmappedConditions) {
+      const labels = Object.entries(result.unmappedConditions)
+        .map(([label, n]) => `${label} (${n})`)
+        .join(', ');
+      console.log(`        unmapped conditions: ${labels}`);
+      console.log('        add them to condition_mappings so these listings can be tiered');
+    }
   } else {
     // A vetoed poll is a normal, expected outcome, not a crash. Nothing changed.
     console.warn(`  ${source.id}: NOT APPLIED — ${result.error} (${ms}ms)`);

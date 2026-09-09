@@ -743,7 +743,11 @@ future code cannot violate them.
 - **An unstated condition is valued against the cheapest tier, never the
   dearest.** A feed states price and title, almost never condition. Assuming
   mint on a piece that proves thrashed costs money; assuming the worst on one
-  that proves mint costs an opportunity.
+  that proves mint costs an opportunity. Where a feed DOES state it — merchant
+  feeds carry `g:condition` — the word is mapped to a tier through that source's
+  own row in `condition_mappings`, because "Very Good" means different things on
+  different venues. A word nothing maps stays unmapped rather than being
+  guessed at, and `npm run poll` names it so you can add the row.
 - **FX travels with its rate.** `price_base` and `fx_rate_at_snapshot` are
   all-or-nothing, so a historical price can never be reconverted at today's rate.
 - **Heat never enters the arbitrage score.** Profit is measurable; heat is

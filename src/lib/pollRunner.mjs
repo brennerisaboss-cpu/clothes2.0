@@ -8,6 +8,7 @@ import { ingestVeto, statusChangeVeto, detectRelists, planAbsences, RELIST_WINDO
 import { planMatch } from './matching.mjs';
 import { assessCatalogue } from './plausibility.mjs';
 import { sublineById } from './brands/index.mjs';
+import { normalizeAlias } from './normalize.mjs';
 
 class HostLimiter {
   constructor(minIntervalMs = 500) {
@@ -76,6 +77,34 @@ async function findOrCreateItem(client, plan) {
     ],
   );
   return rows[0]?.id ?? null;
+}
+
+/**
+ * What this source's condition words mean, as tiers.
+ *
+ * `condition_mappings` has existed since the first migration, is seeded with
+ * the grading vocabularies of the three venues that publish feeds, and the
+ * merchant-feed adapter pulls `g:condition` out of every record it reads. The
+ * poll runner then inserted `null, null` into condition_raw and condition_tier
+ * unconditionally, so all of it was thrown away at the last step.
+ *
+ * The cost is not a missing column. `resaleEstimate` values a listing whose
+ * condition nobody stated against the CHEAPEST tier available and halves its
+ * confidence, both deliberately — so every listing the automated half of the
+ * platform produced was permanently in the weakest branch of the valuation,
+ * including the ones whose seller had stated the condition plainly in the feed.
+ *
+ * Normalised the same way aliases are, so "Very Good" and "very good" are one
+ * label. A word with no mapping keeps its raw text and gets no tier: the
+ * unstated-condition rule then applies exactly as before, and the label shows
+ * up in the run summary as something to map rather than disappearing.
+ */
+async function conditionTiers(client, sourceId) {
+  const { rows } = await client.query(
+    `select raw_label_norm, tier::text as tier from condition_mappings where source_id = $1`,
+    [sourceId],
+  );
+  return new Map(rows.map((r) => [r.raw_label_norm, r.tier]));
 }
 
 async function rateToBase(client, from, baseCurrency) {
@@ -219,6 +248,11 @@ export async function runPoll({
     }
   }
 
+  // Read once per run rather than per listing: a handful of rows, and every
+  // listing needs them.
+  const tiers = await conditionTiers(client, source.id);
+  const unmappedConditions = new Map();
+
   // Keep only listings that resolve to a monitored brand. A shop sells many
   // labels; a narrow feed is what makes the matching tractable.
   const relevant = [];
@@ -263,6 +297,14 @@ export async function runPoll({
   let unchanged = 0;
 
   for (const { raw, plan, itemId } of relevant) {
+    const conditionRaw = raw.conditionRaw ? String(raw.conditionRaw).trim() : null;
+    const conditionTier = conditionRaw
+      ? (tiers.get(normalizeAlias(conditionRaw).compact) ?? null)
+      : null;
+    if (conditionRaw && !conditionTier) {
+      unmappedConditions.set(conditionRaw, (unmappedConditions.get(conditionRaw) ?? 0) + 1);
+    }
+
     const prior = priorById.get(raw.sourceItemId);
     const priceChanged = !prior || Number(prior.price) !== Number(raw.price);
 
@@ -297,7 +339,12 @@ export async function runPoll({
        ) values (
          $16,
          $1,$2,$3,$4,$5,'UNKNOWN',
-         null,null,$6,$7,$8,
+         -- The condition the source stated, and the tier it maps to on THIS
+         -- source. A label with no mapping keeps its text and gets no tier:
+         -- the unstated-condition rule then values it against the cheapest
+         -- tier, which is where it already was, rather than guessing at what
+         -- an unrecognised word means.
+         $17,$18::condition_tier,$6,$7,$8,
          $9,$10,$11,$12,'active_ask',
          false,true,$13,$14,$15,
          -- First sighting, set once and never updated. A re-price inserts a
@@ -332,6 +379,8 @@ export async function runPoll({
         // be read confidently — that listing lands in /unresolved rather than
         // being pooled with something it may not be.
         itemId,
+        conditionRaw,
+        conditionTier,
       ],
     );
     if (supersedesId) {
@@ -391,5 +440,11 @@ export async function runPoll({
     // exactly as designed as FAILING on every screen, for ever.
     suspectShrink: Boolean(veto) && result.complete,
     partial: veto ?? undefined,
+    // Condition words this source used that nothing maps to a tier. Named
+    // rather than counted, because the fix is one row in condition_mappings and
+    // the only thing standing between the operator and it is knowing the word.
+    unmappedConditions: unmappedConditions.size
+      ? Object.fromEntries([...unmappedConditions].sort((a, b) => b[1] - a[1]).slice(0, 10))
+      : undefined,
   });
 }
