@@ -162,7 +162,9 @@ export function firstBlocker(c) {
         `${n(c.asksOnly)} scored ${n(c.asksOnly) === 1 ? 'margin rests' : 'margins rest'} on asking prices alone — ` +
         'what sellers hope for, not what buyers paid. Pasting a live search page can only ever produce asking ' +
         'prices, so on a paste-driven install this is the normal state rather than a passing one.',
-      fix: 'Show them anyway, marked as ask-based.',
+      fix:
+        'Show them anyway, marked as ask-based — or add a source that reports ' +
+        'what pieces actually sold for: npm run add-ebay -- --sold',
       href: '/opportunities?asks=1',
     };
   }

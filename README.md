@@ -70,8 +70,8 @@ npm run setup:demo                # setup, plus sample listings
 ### Verify
 
 ```bash
-npm test                  # 558 unit tests, no database needed
-npm run test:integration  # 63 tests against a real Postgres (needs DATABASE_URL)
+npm test                  # 581 unit tests, no database needed
+npm run test:integration  # 73 tests against a real Postgres (needs DATABASE_URL)
 npm run typecheck
 npm run verify:live       # real calls to every configured API — see below
 ```
@@ -428,6 +428,19 @@ Not every venue runs one. If the search turns up nothing, that venue has no
 sanctioned feed, and nothing in this project can create one — it stays manual
 entry, with URL prefill on `/add` doing what it can from the link alone.
 
+### One venue, two endpoints
+
+eBay's asks and eBay's sales arrive through different APIs with different
+scopes, and a sold-item search is a ranked sample over ninety days rather than
+an enumeration of a catalogue — so they cannot be one source. They are
+unarguably one venue, which is what `sources.venue_id` says. Comps scope to the
+venue, never to the endpoint: without that, an item with three eBay asks would
+scope to those three and drop every eBay sale out of its own pool.
+
+A sale ageing out of the ninety-day window is never read as a disappearance,
+because the adapter never claims to have enumerated anything and the ingest
+already refuses to conclude an absence from an incomplete read.
+
 ### Grailed has no equivalent
 
 It is peer-to-peer, so there is no merchant catalogue to syndicate and no
@@ -553,14 +566,27 @@ There are three tiers, and the middle one matters most in practice:
 
 | Basis | What it means |
 |---|---|
-| recorded sale | you entered what a piece actually fetched (`npm run record-sale`) |
+| confirmed sale | somebody paid this — you recorded it (`npm run record-sale`), or eBay reported it |
 | disappearance | a piece was taken off the market at that price |
 | asks only | nobody has agreed to this number at all |
 
-Gating on recorded sales alone would leave `/opportunities` permanently empty,
-because nothing in the automated path ever writes one — and rightly so: a poll
-that stops seeing a listing cannot know it sold. But a piece that vanished at a
-price is not nothing. It might have been withdrawn or reserved, yet across a
+For most of this platform's life the top row was reachable only by hand, and
+rightly so: a poll that stops seeing a listing cannot know it sold, and an
+inferred sale is not representable here. **eBay's Marketplace Insights API is
+the exception** — it returns completed sales with a price and a date, which is
+the venue stating the outcome rather than this code inferring it.
+
+```bash
+npm run add-ebay -- --sold
+```
+
+It is a limited release: the scope is granted per application by eBay, on
+request, separately from Buy API access and from the Application Growth Check.
+Most keysets do not have it, and `--sold` probes for it before saving anything —
+so a keyset without the grant fails at setup, with the reason, rather than
+returning nothing on every poll for a month. Without it, gating on confirmed
+sales alone would still leave `/opportunities` empty. But a piece that vanished
+at a price is not nothing. It might have been withdrawn or reserved, yet across a
 pool of comps most of them sold, and that is materially better evidence than an
 asking price.
 
@@ -616,7 +642,8 @@ of it.
 | Shopify shops | `PROBE_CONTACT` | `npm run add-source -- --domain shop.example --currency JPY` |
 | Yahoo! Shopping | `YAHOO_APP_ID` | `{"adapter":"yahoo_shopping","currency":"JPY","query":"コムデギャルソン"}` |
 | Rakuten Ichiba | `RAKUTEN_APP_ID` | `{"adapter":"rakuten","currency":"JPY","keyword":"…"}` |
-| eBay Browse | `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET` | `{"adapter":"ebay","query":"…","marketplaceId":"EBAY_GB"}` |
+| eBay Browse (asks) | `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET` | `{"adapter":"ebay","query":"…","marketplaceId":"EBAY_GB"}` |
+| eBay completed sales | the same keys, plus eBay granting the Insights scope | `npm run add-ebay -- --sold` |
 | Discord alerts | — | set `webhook_url` on a row in `alert_rules` and switch `channel` from `none` to `discord` |
 | Attention signals | `PROBE_CONTACT` | `npm run heat` |
 
@@ -736,6 +763,13 @@ future code cannot violate them.
   by integration tests against a real database.
 - **Comps are never pooled across sub-line or condition tier**, and resale value
   comes only from venues you sell on.
+- **One garment is one item however many sizes it was cut in.** Size is evidence
+  quality, not identity: a comp in the size you are holding outweighs one three
+  sizes away, and putting size in the key would fragment every pool below the
+  three-comp minimum. It only ever discounts a comp demonstrably in another
+  size, never promotes one on an assumption, and never compares across sizing
+  systems — a Yohji 3, a CDG M and an IT 50 are "roughly" one another, and
+  roughly is a conversion table somebody would then be trusting to the step.
 - **One garment is one item, enforced by the database.** A unique index on
   `items.identity_key` means two code paths cannot race and split a garment's
   comps between two items — which would halve every comp set without raising an
@@ -770,7 +804,7 @@ future code cannot violate them.
 
 ## Brands
 
-A curated roster of ~47 houses and ~107 sub-lines — narrow on purpose, because
+A curated roster of ~51 houses and ~116 sub-lines — narrow on purpose, because
 that is what makes matching tractable and the feed signal-dense.
 
 Sub-lines are modelled explicitly wherever they are separate markets: CDG's
@@ -795,6 +829,7 @@ scripts/           migrate, seed, poll, alert, heat, probe-shops, dev-fixture
 src/lib/           domain logic, framework-free and unit-tested
   brands/          the curated roster
   adapters/        one per source, all on a shared contract
+  size.mjs         reading a size, and what a comp in another one is worth
   resolve.mjs      brand and sub-line resolution
   scoring.mjs      arbitrage, on routes
   priceHistory.mjs comps by condition tier, evidence weighting

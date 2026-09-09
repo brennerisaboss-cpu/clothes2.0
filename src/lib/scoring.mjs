@@ -140,10 +140,23 @@ export function resaleEstimate(
   // a like-for-like comp, and it must never read as one.
   const borrowedCount = sellable.filter((o) => o.borrowed).length;
 
+  // Scoped to the VENUE, not to the endpoint that observed it.
+  //
+  // eBay's Browse API returns active asks and its Marketplace Insights API
+  // returns completed sales; they need different scopes and have different
+  // completeness properties, so they cannot be one source — and they are
+  // unarguably one venue. Comparing source ids here would have done something
+  // quietly terrible the moment sold data arrived: an item with three eBay asks
+  // scopes to those three and drops every eBay SALE out of the pool, trading
+  // the strongest evidence this platform holds for a proxy of it, to satisfy a
+  // boundary that is an artefact of how the data is fetched.
+  //
+  // Falls back to the source id, so every source that observes one venue —
+  // which is all of them but eBay — behaves exactly as before.
   let venueScoped = false;
   let exitComps = sellable;
   if (exitSourceId) {
-    const own = sellable.filter((o) => o.source_id === exitSourceId);
+    const own = sellable.filter((o) => (o.venue_id ?? o.source_id) === exitSourceId);
     if (own.length >= MIN_COMPS) {
       exitComps = own;
       venueScoped = true;
@@ -272,7 +285,10 @@ export function scoreOpportunity({
   }
 
   const estimate = resaleEstimate(
-    observations, listing.condition_tier, now, route.exit_source, listing.size_raw,
+    // The venue, falling back to the source for every route written before
+    // venues existed as a separate idea.
+    observations, listing.condition_tier, now, route.exit_venue ?? route.exit_source,
+    listing.size_raw,
   );
 
   // Correct by what pieces of this brand actually fetched on this venue, where
@@ -366,9 +382,17 @@ export function scoreOpportunity({
   // Three tiers, not two.
   //
   // Gating on confirmed sales alone would have left this screen permanently
-  // empty, because nothing in the automated path ever writes one — and rightly
-  // so: a poll that stops seeing a listing cannot know it sold. Only a sale you
-  // record yourself is confirmed.
+  // empty for most of this platform's life, because nothing in the automated
+  // path could write one — and rightly so: a poll that stops seeing a listing
+  // cannot know it sold, and an inferred sale is not representable.
+  //
+  // One source can now say it outright. eBay's Marketplace Insights returns
+  // completed sales with a price and a date, which is the venue stating the
+  // outcome rather than this code inferring it, and is the single case
+  // `sold_confirmed` has ever been allowed to describe. It is a limited release
+  // and most installs will not have it, so the tiers below still hold — but
+  // "only a sale you record yourself is confirmed" is no longer true, and a
+  // comment that says so would send someone looking for a bug in the ingest.
   //
   // But a piece that vanished at a price is not nothing. Somebody took it off
   // the market at that number, and while it might have been withdrawn or

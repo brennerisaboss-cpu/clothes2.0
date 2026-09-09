@@ -302,6 +302,8 @@ export type Observation = {
   source_id: string;
   source_name: string;
   source_role: string;
+  /** The marketplace behind the source. eBay's asks and eBay's sales share one. */
+  venue_id: string;
   marketplace_kind?: string;
   title_raw: string;
   url: string | null;
@@ -319,7 +321,7 @@ export async function itemObservations(itemId: string) {
             l.evidence::text as evidence, l.status::text as status,
             l.date_seen, l.last_verified_at, l.entered_manually,
             l.source_id, s.display_name as source_name, s.role::text as source_role,
-            s.marketplace_kind::text as marketplace_kind,
+            s.venue_id, s.marketplace_kind::text as marketplace_kind,
             l.title_raw, l.url, l.image_url, l.size_raw, l.supersedes_id,
             not exists (select 1 from listings sup where sup.supersedes_id = l.id) as is_head
        from listings l
@@ -409,6 +411,12 @@ export type RouteRow = {
   exit_source: string;
   acquisition_name: string;
   exit_name: string;
+  /**
+   * The marketplace the exit source observes, which is what comps scope to.
+   * Not the source id: eBay's asks and eBay's sales are two sources and one
+   * venue, and scoping to the endpoint would drop the sales.
+   */
+  exit_venue: string;
   active: boolean;
   notes: string | null;
   proxy_fee_pct: number;
@@ -427,7 +435,8 @@ export type RouteRow = {
 
 export async function listRoutes() {
   return query<RouteRow>(
-    `select r.*, a.display_name as acquisition_name, e.display_name as exit_name
+    `select r.*, a.display_name as acquisition_name, e.display_name as exit_name,
+            e.venue_id as exit_venue
        from routes r
        join sources a on a.id = r.acquisition_source
        join sources e on e.id = r.exit_source
@@ -582,7 +591,7 @@ export async function observationsForItems(itemIds: string[]) {
             l.evidence::text as evidence, l.status::text as status,
             l.date_seen, l.last_verified_at, l.entered_manually,
             l.source_id, s.display_name as source_name, s.role::text as source_role,
-            s.marketplace_kind::text as marketplace_kind,
+            s.venue_id, s.marketplace_kind::text as marketplace_kind,
             l.title_raw, l.url, l.image_url, l.size_raw, l.supersedes_id,
             true as is_head
        from visible v

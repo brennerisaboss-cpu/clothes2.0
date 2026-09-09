@@ -279,7 +279,8 @@ const blockers = [
       '  paid. /opportunities now shows these anyway, marked ask-based, because\n' +
       '  a pasted search page can only ever record an ask. The margins are real\n' +
       '  arithmetic on unreal inputs; treat them as a shortlist, not a number.',
-    'npm run record-sale -- --brand cdg --venue ebay --price 700 --estimated 1150',
+    'npm run add-ebay -- --sold        (completed sales, if eBay grants the scope)\n' +
+    '     npm run record-sale -- --brand cdg --venue ebay --price 700 --estimated 1150',
   ],
   [
     unconvertible.length > 0,

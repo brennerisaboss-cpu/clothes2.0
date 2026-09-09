@@ -1,10 +1,15 @@
 // eBay Browse API — item_summary/search.
 //
-// Active listings only. eBay exposes no sold-listings endpoint to us, and the
-// sold-listings *page* is off limits under the project's constraints, so eBay
-// contributes asking prices as cross-market context and nothing more. It can
-// never supply a confirmed sale, which is worth remembering when its comps
-// dominate an estimate.
+// Active listings only. This endpoint returns asks — what sellers hope for —
+// and every listing it produces says `soldDataAvailable: false` so nothing
+// downstream can mistake one for a sale.
+//
+// Sold prices come from a different endpoint with a different scope:
+// `ebayInsights.mjs` reads Marketplace Insights, which returns completed sales.
+// The two are one venue observed two ways, which is what `sources.venue_id`
+// exists to say — an item's eBay comps must never scope to one of them and drop
+// the other. The sold-listings *page* remains off limits under the project's
+// constraints; the API is the sanctioned route to the same fact.
 //
 // Access caveat from phase 0: production access to the Buy APIs appears to
 // require eBay's manual Application Growth Check. That is a gate on your
@@ -219,8 +224,21 @@ export async function fetchListings(config, deps = {}) {
 
   // Every search failed: there is no data and no reason to think the source is
   // healthy, so this is a failure rather than an empty success.
-  if (failures.length === queries.length) {
-    return failed(`all ${queries.length} searches failed — first: ${failures[0]}`);
+  // Nothing collected, and something went wrong: a failure, not an empty
+  // success.
+  //
+  // The test used to be "every search failed", which a rate limit slips
+  // through — it BREAKS the loop, so the searches it prevented are never
+  // attempted and never counted as failures. One 429 on the first of three
+  // queries therefore reported ok with an empty result set, which is
+  // indistinguishable from a genuine "nothing matched" and would have been read
+  // as one. Reporting the failure is what makes the poll change nothing.
+  if (!listings.length && failures.length) {
+    return failed(
+      failures.length === queries.length
+        ? `all ${queries.length} searches failed — first: ${failures[0]}`
+        : `no listings collected — ${failures[0]}${rateLimited ? ' (stopped on a rate limit)' : ''}`,
+    );
   }
 
   // Some failed. Real data, partial view — and the poll must be marked

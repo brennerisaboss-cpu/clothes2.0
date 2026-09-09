@@ -3,15 +3,10 @@ import { collectingUserAgent } from '@/lib/userAgent.mjs';
 import { pool } from '@/lib/db';
 import { runPoll } from '@/lib/pollRunner.mjs';
 import { checkCron } from '@/lib/cronAuth';
-import * as shopify from '@/lib/adapters/shopify.mjs';
-import * as yahooShopping from '@/lib/adapters/yahooShopping.mjs';
-import * as rakuten from '@/lib/adapters/rakuten.mjs';
-import * as ebay from '@/lib/adapters/ebay.mjs';
+import { adapterFor } from '@/lib/adapters/index.mjs';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
-
-const ADAPTERS: Record<string, unknown> = { shopify, yahoo_shopping: yahooShopping, rakuten, ebay };
 
 export async function GET(request: Request) {
   const denied = checkCron(request);
@@ -31,7 +26,10 @@ export async function GET(request: Request) {
     const { ua } = collectingUserAgent();
 
     for (const source of sources) {
-      const adapter = ADAPTERS[source.config?.adapter ?? 'shopify'];
+      // One registry, shared with `npm run poll`. This endpoint used to keep
+      // its own and knew three fewer adapters than the CLI, so a WooCommerce
+      // shop or a merchant feed worked by hand and failed on every schedule.
+      const adapter = adapterFor(source.config);
       if (!adapter) {
         results.push({ source: source.id, ok: false, error: 'no adapter configured' });
         continue;

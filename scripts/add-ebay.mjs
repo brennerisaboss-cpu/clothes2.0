@@ -1,6 +1,6 @@
 // Configure eBay as a source, one search per monitored house.
 //
-//   node scripts/add-ebay.mjs [--marketplace EBAY_GB] [--currency GBP]
+//   node scripts/add-ebay.mjs [--marketplace EBAY_GB] [--currency GBP] [--sold]
 //
 // eBay matters here for a reason no other reachable venue covers: it is a
 // genuine EXIT venue for this market, and exit comps are what resale value is
@@ -17,15 +17,33 @@
 // its production keyset, and put them in .env.local as EBAY_CLIENT_ID and
 // EBAY_CLIENT_SECRET.
 //
-// Note what this does NOT give you: the Browse API returns ACTIVE listings —
-// asks, not sold prices. Sold data needs eBay's Marketplace Insights API,
-// which is approval-gated. So these are comps in the same sense a shop window
-// is a comp, and the calibration layer is what turns them into an expectation
-// of what a piece actually fetches.
+// Note what the default does NOT give you: the Browse API returns ACTIVE
+// listings — asks, not sold prices. So these are comps in the same sense a shop
+// window is a comp, and the calibration layer is what turns them into an
+// expectation of what a piece actually fetches.
+//
+// --sold adds the other half, and it is the more valuable half. eBay's
+// Marketplace Insights API returns COMPLETED SALES: an item, a price, a date,
+// stated by the venue. That is the only sanctioned source of what somebody
+// actually paid that this platform can reach, and it is what moves a margin
+// from arithmetic on two hopes to a figure resting on a transaction.
+//
+// It is a limited release. The scope is granted per application, on request, by
+// eBay — separately from Buy API access and separately from the Application
+// Growth Check. Most keysets do not have it. This probes for it before saving
+// anything, so a keyset without the grant fails here, with the reason, rather
+// than silently returning nothing on every poll for weeks.
+//
+// The two are separate SOURCES and one VENUE. They need different scopes and
+// have different completeness properties — a sold-item search is a ranked
+// sample and never enumerates a catalogue — so they cannot share a row; and
+// comps scope to the venue rather than to the endpoint, so the sales are never
+// dropped out of a pool for sitting under a different source id.
 
 import pg from 'pg';
 import { BRANDS } from '../src/lib/brands/index.mjs';
 import { isSandboxKey, hostFor } from '../src/lib/adapters/ebay.mjs';
+import * as insights from '../src/lib/adapters/ebayInsights.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (n, d = null) => {
@@ -36,6 +54,7 @@ const flag = (n, d = null) => {
 const marketplace = flag('marketplace', 'EBAY_GB');
 const currency = flag('currency', marketplace === 'EBAY_GB' ? 'GBP' : 'USD').toUpperCase();
 const every = Number(flag('every', '360'));
+const withSold = argv.includes('--sold');
 
 if (!process.env.EBAY_CLIENT_ID || !process.env.EBAY_CLIENT_SECRET) {
   console.error(`
@@ -194,9 +213,71 @@ for (const a of acquisitions) {
   routes += r.rowCount;
 }
 
+// The sold half, if asked for and if the keyset can reach it.
+let soldSearches = 0;
+if (withSold) {
+  // Probed before it is saved. A limited-release scope the keyset does not hold
+  // fails with a 403 on every call, and a source configured anyway would return
+  // nothing on every poll — which looks exactly like a market where nothing
+  // sells, for as long as nobody checks.
+  const probe = await insights.fetchListings(
+    { queries: [BRANDS[0].display_name], marketplaceId: marketplace, maxPages: 1 },
+    {},
+  );
+
+  if (!probe.ok) {
+    console.error(`
+  Sold data NOT configured: ${probe.error}
+
+  Marketplace Insights is a limited release. Ask eBay for the
+  ${insights.SCOPE_PATH} scope on this keyset, at developer.ebay.com under the
+  application's API access. It is separate from Buy API access and from the
+  Application Growth Check, and nothing here can grant it.
+
+  The asks above are configured and working. Run this again with --sold once
+  the scope is granted.
+`);
+  } else {
+    const soldQueries = BRANDS.map((b) => b.display_name);
+    await client.query(
+      `insert into sources
+         (id, display_name, tier, role, automation_allowed, permission_status,
+          poll_interval_minutes, marketplace_kind, venue_id, config)
+       values ('ebay_sold','eBay (completed sales)','api','exit',true,'granted',
+               $1,'secondhand','ebay',$2::jsonb)
+       on conflict (id) do update set
+         poll_interval_minutes = excluded.poll_interval_minutes,
+         venue_id = excluded.venue_id,
+         config = excluded.config`,
+      [
+        // Daily rather than hourly. The window is ninety days wide and the
+        // quota is smaller than the Browse one, so asking more often re-reads
+        // the same sales and buys nothing.
+        Math.max(every, 1440),
+        JSON.stringify({
+          adapter: 'ebay_insights',
+          queries: soldQueries,
+          marketplaceId: marketplace,
+          currency,
+          filter: 'conditions:{USED}',
+        }),
+      ],
+    );
+    soldSearches = soldQueries.length;
+    console.log(`\n  Sold data reachable — ${probe.listings.length} completed sales for "${BRANDS[0].display_name}".`);
+  }
+}
+
 console.log(
   `\neBay configured as an exit venue: ${added} searches on ${marketplace}, priced in ${currency}.` +
+    (soldSearches ? `\n${soldSearches} completed-sale searches, refreshed daily.` : '') +
     (routes ? `\n${routes} routes created.` : '') +
+    (withSold && !soldSearches ? '' : '') +
+    (soldSearches
+      ? '\n\nThis is the first source that can say what somebody actually paid.\n' +
+        'Until now every margin rested on asking prices, and /opportunities held\n' +
+        'those behind a toggle for exactly that reason.'
+      : '\n\nThese are asking prices. --sold adds eBay\'s completed sales, which is\nwhat turns a margin into a figure somebody agreed to.') +
     `\n\n  npm run poll\n`,
 );
 await client.end();

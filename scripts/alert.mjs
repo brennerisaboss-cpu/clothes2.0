@@ -54,7 +54,8 @@ const { rows: obsRows } = itemIds.length
               l.id, l.price_base, l.condition_tier::text as condition_tier,
               l.evidence::text as evidence, l.status::text as status, l.date_seen,
               l.last_verified_at, l.entered_manually, l.source_id,
-              s.role::text as source_role, s.marketplace_kind::text as marketplace_kind
+              s.role::text as source_role, s.venue_id,
+              s.marketplace_kind::text as marketplace_kind
          from visible v
          join listings l on l.item_id = v.from_item
          join sources s on s.id = l.source_id
@@ -72,7 +73,14 @@ for (const row of obsRows) {
   observations.get(row.item_id).push(row);
 }
 
-const { rows: routes } = await client.query(`select * from routes where active`);
+// The exit VENUE travels with the route, because comps scope to a venue rather
+// than to the endpoint that observed it — eBay's asks and eBay's sales are two
+// sources and one market.
+const { rows: routes } = await client.query(
+  `select r.*, e.venue_id as exit_venue
+     from routes r join sources e on e.id = r.exit_source
+    where r.active`,
+);
 
 // What pieces of each brand actually fetched on each venue. Below three
 // recorded sales it corrects nothing, which is what a fresh install does.

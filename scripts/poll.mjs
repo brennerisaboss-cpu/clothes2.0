@@ -10,23 +10,8 @@
 import pg from 'pg';
 import { collectingUserAgent, NO_CONTACT_WARNING } from '../src/lib/userAgent.mjs';
 import { runPoll } from '../src/lib/pollRunner.mjs';
-import * as shopify from '../src/lib/adapters/shopify.mjs';
-import * as woocommerce from '../src/lib/adapters/woocommerce.mjs';
-import * as yahooShopping from '../src/lib/adapters/yahooShopping.mjs';
-import * as rakuten from '../src/lib/adapters/rakuten.mjs';
-import * as ebay from '../src/lib/adapters/ebay.mjs';
-import * as merchantFeed from '../src/lib/adapters/merchantFeed.mjs';
-import * as page from '../src/lib/adapters/page.mjs';
+import { ADAPTERS } from '../src/lib/adapters/index.mjs';
 import { fetchRates, isFresh } from '../src/lib/adapters/fx.mjs';
-
-const ADAPTERS = {
-  shopify, woocommerce, yahoo_shopping: yahooShopping, rakuten, ebay,
-  merchant_feed: merchantFeed,
-  // The shop with no feed and no key. Reads the results page itself, the way
-  // copying it reads it, and always reports the catalogue as incomplete — so
-  // it can add and re-price, and can never conclude anything is gone.
-  page,
-};
 
 // One builder, and it refuses rather than inventing. The previous default
 // wrote "contact not set" into the User-Agent — a request that was asked to

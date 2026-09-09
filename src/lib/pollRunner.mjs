@@ -298,6 +298,7 @@ export async function runPoll({
   const priorById = new Map(priorActive.map((l) => [l.source_item_id, l]));
   let inserted = 0;
   let unchanged = 0;
+  let sales = 0;
 
   for (const { raw, plan, itemId } of relevant) {
     const conditionRaw = raw.conditionRaw ? String(raw.conditionRaw).trim() : null;
@@ -309,8 +310,30 @@ export async function runPoll({
       unmappedConditions.set(conditionRaw, (unmappedConditions.get(conditionRaw) ?? 0) + 1);
     }
 
+    // A completed sale, where the source states one.
+    //
+    // The pipeline's standing rule is that an adapter reports observations and
+    // never decides that something sold — because for every other source, "it
+    // stopped appearing" is the only thing an adapter could possibly mean by
+    // it, and that is an inference, not a sale. `sold_confirmed` exists for the
+    // one case that is not an inference: the source saying outright that the
+    // item sold, on a date, at a price. Marketplace Insights is that case, and
+    // is the only adapter that may set this.
+    //
+    // Dated to the sale rather than to the poll. A sale is a fact with a
+    // timestamp, and stamping it with today's would let a three-month-old
+    // result count as evidence gathered this morning — invisibly, since a
+    // wrongly-dated comp produces a number rather than a complaint.
+    const soldAt = raw.evidence === 'confirmed_sale' ? parseDate(raw.soldAt) : null;
+    const isSale = raw.evidence === 'confirmed_sale' && soldAt != null;
+
     const prior = priorById.get(raw.sourceItemId);
-    const priceChanged = !prior || Number(prior.price) !== Number(raw.price);
+    // A sale is never a re-price of anything. It is a distinct, immutable
+    // event, and the same event arriving on the next poll must not become a
+    // second comp — the unique index on (source, item, date_seen) is what
+    // stops that, since a sale is dated by when it happened rather than by
+    // when it was read.
+    const priceChanged = isSale || !prior || Number(prior.price) !== Number(raw.price);
 
     if (!priceChanged) {
       // Same price: refresh the sighting rather than writing a duplicate row.
@@ -330,16 +353,16 @@ export async function runPoll({
 
     // A new price is a new observation, so it becomes a new snapshot row rather
     // than overwriting. The table IS the price history.
-    const supersedesId = prior?.id ?? relinked.get(raw.sourceItemId) ?? null;
+    const supersedesId = isSale ? null : (prior?.id ?? relinked.get(raw.sourceItemId) ?? null);
 
-    await client.query(
+    const written = await client.query(
       `insert into listings (
          item_id,
          source_id, source_item_id, brand_raw, title_raw, size_raw, size_region,
          condition_raw, condition_tier, price, currency, price_base,
          fx_rate_at_snapshot, url, image_url, status, evidence,
          entered_manually, last_poll_ok, supersedes_id, proxy_purchasable,
-         source_published_at, first_seen_at
+         source_published_at, first_seen_at, date_seen
        ) values (
          $16,
          $1,$2,$3,$4,$5,$19::size_region,
@@ -349,14 +372,34 @@ export async function runPoll({
          -- tier, which is where it already was, rather than guessing at what
          -- an unrecognised word means.
          $17,$18::condition_tier,$6,$7,$8,
-         $9,$10,$11,$12,'active_ask',
+         $9,$10,$11,$12,$20::evidence_class,
          false,true,$13,$14,$15,
          -- First sighting, set once and never updated. A re-price inserts a
          -- new row, and that row's first sighting is its own: the piece
          -- reached the market at this price now. The chain back to the
          -- original is supersedes_id, which the price history follows.
-         now()
-       )`,
+         --
+         -- NULL for a sale. A completed-sale record says what a piece fetched
+         -- and never says when it was listed, and inventing a first sighting of
+         -- now() would give it a span running from today back to the sale date
+         -- — a negative duration, floored to zero, so every sale would enter
+         -- the survival curve as a piece that sold the instant it appeared and
+         -- the venue would read as one where everything moves immediately.
+         -- survival.mjs already refuses a row without one, so a null is the
+         -- honest answer and the existing refusal handles it.
+         case when $21::timestamptz is null then now() end,
+         coalesce($21::timestamptz, now())
+       )
+       -- The same sale seen again on the next poll is the same event, not a
+       -- second one. It is dated by when it happened, so the unique index on
+       -- (source, item, date seen) makes re-reading a ninety-day window
+       -- idempotent rather than a way to triple-count every sale in it.
+       -- The index is partial, so the inference clause has to be too, or
+       -- Postgres cannot tell which constraint is meant.
+       on conflict (source_id, source_item_id, date_seen)
+         where source_item_id is not null
+         do nothing
+       returning id`,
       [
         source.id,
         raw.sourceItemId,
@@ -370,8 +413,10 @@ export async function runPoll({
         raw.url ?? null,
         raw.imageUrl ?? null,
         // `available: false` on Shopify is ambiguous — sold, withdrawn or out of
-        // stock are indistinguishable — so it is "unknown", never "sold".
-        raw.available === false ? 'unknown' : 'active',
+        // stock are indistinguishable — so it is "unknown", never "sold". Only
+        // a source that states the sale outright reaches sold_confirmed, and
+        // the schema ties that status to the evidence class by constraint.
+        isSale ? 'sold_confirmed' : raw.available === false ? 'unknown' : 'active',
         supersedesId,
         // Three-state on purpose: a source that did not say is not a yes.
         raw.extra?.proxyPurchasable ?? null,
@@ -391,11 +436,21 @@ export async function runPoll({
         // never be told apart by size, since a size is only comparable within
         // its own system.
         sizeRegion,
+        isSale ? 'confirmed_sale' : 'active_ask',
+        soldAt,
       ],
     );
+
+    // Nothing written means this exact sale was already on file.
+    if (!written.rowCount) {
+      unchanged++;
+      continue;
+    }
+
     if (supersedesId) {
       await client.query(`update listings set status = 'relisted' where id = $1`, [supersedesId]);
     }
+    if (isSale) sales++;
     inserted++;
   }
 
@@ -442,6 +497,10 @@ export async function runPoll({
     kept: relevant.length,
     inserted,
     unchanged,
+    // Completed sales recorded. Worth its own number: it is the only evidence
+    // tier the automated path can produce that somebody actually paid a price,
+    // and until a source supplies one every margin on the screen rests on asks.
+    sales,
     delisted: absences.length,
     relisted: relinked.size,
     // Recorded on the run so a partial read is legible afterwards rather than
