@@ -47,17 +47,41 @@ function occurs(entry, haystack) {
     return new RegExp(`(?:^| )${safe}(?: |$)`).test(haystack.spaced);
   }
 
+  // Two boundary rules, both of them about a match that stops in the middle of
+  // something longer.
+  //
   // '+' is a meaningful character in these names, not punctuation: "Homme Plus"
   // is written "Homme+" as often as not. So a match must not stop short of one
-  // and quietly downgrade Homme Plus to Homme. Reject any match whose next
-  // character is a '+' the alias itself does not claim.
+  // and quietly downgrade Homme Plus to Homme.
+  //
+  // A DIGIT at either end is the same problem and it is everywhere in this
+  // roster — Guidi names boots "996" and derbies "6006", Issey has "132 5",
+  // Julius "Julius_7", Margiela numbers its lines. Matched as bare substrings
+  // those run into any longer number a title happens to carry: "Maison Martin
+  // Margiela 1998" resolved to Line 1, because "margiela1" is a prefix of
+  // "margiela1998". A wrong sub-line is the worst resolution failure there is —
+  // it does not fail, it pools a garment into another line's comp set and
+  // prices it there.
+  //
+  // So a numeric edge has to land on a numeric boundary, the same way a short
+  // alias has to land on a word boundary.
   const endsWithPlus = entry.compact.endsWith('+');
+  const endsWithDigit = /\d$/.test(entry.compact);
+  const startsWithDigit = /^\d/.test(entry.compact);
+  const digit = (ch) => ch != null && ch >= '0' && ch <= '9';
+
   let from = 0;
   for (;;) {
     const at = haystack.compact.indexOf(entry.compact, from);
     if (at === -1) return false;
     const next = haystack.compact[at + entry.compact.length];
-    if (endsWithPlus || next !== '+') return true;
+    const before = at > 0 ? haystack.compact[at - 1] : null;
+
+    const cutsAPlus = !endsWithPlus && next === '+';
+    const cutsANumber =
+      (endsWithDigit && digit(next)) || (startsWithDigit && digit(before));
+
+    if (!cutsAPlus && !cutsANumber) return true;
     from = at + 1;
   }
 }

@@ -97,10 +97,20 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
           <p className="mt-1 text-sm text-muted">
             {item.subline_name ?? 'Sub-line unresolved'}
             {item.ad_year
-              ? ` · AD${item.ad_year}`
+              ? ` · ${item.ad_year_basis === 'ad_tag' ? 'AD' : ''}${item.ad_year}`
               : item.ad_year_status === 'pre_ad_era'
                 ? ' · pre-AD era'
-                : ' · AD year unknown'}
+                : ' · year unknown'}
+            {/* Same number, different kind of claim. An AD tag is printed on the
+                garment; a season code is what a seller wrote about when they
+                think it was made; a typed year is what somebody decided after
+                looking at the piece. All three pool together, and which one this
+                is should not have to be inferred from the item's name. */}
+            {item.ad_year && item.ad_year_basis !== 'ad_tag' ? (
+              <span className="ml-1 text-[11px] uppercase tracking-wide text-accent">
+                {item.ad_year_basis === 'season' ? 'from a season code' : 'set by hand'}
+              </span>
+            ) : null}
             {' · '}
             {item.listing_count} listing{item.listing_count === 1 ? '' : 's'}
           </p>

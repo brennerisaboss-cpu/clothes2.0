@@ -89,6 +89,11 @@ export function planMatch({ brand_raw, title_raw }) {
     sublineId: resolved.sublineId,
     adYear,
     adYearStatus: resolved.adYearStatus,
+    // Which fact the year came from: an AD tag printed on the garment, or a
+    // season code the seller wrote. Both name the same production year and pool
+    // together; only one of them is stamped on the label, and a distinction
+    // that lives in the reasoning and not in the data is one nobody can check.
+    adYearBasis: adYear == null ? null : (resolved.adYearBasis ?? 'ad_tag'),
     type: garment.type,
     material: garment.material,
     model: garment.model,

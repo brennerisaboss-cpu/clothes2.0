@@ -91,8 +91,9 @@ before(async () => {
   );
 
   const item = await client.query(
-    `insert into items (brand_id, subline_id, canonical_name, ad_year, ad_year_status, identity_key)
-     values ('cdg','cdg-homme-plus','alert test jacket',2002,'known','test-alert|ad2002|jacket|wool')
+    `insert into items (brand_id, subline_id, canonical_name, ad_year, ad_year_status,
+                        ad_year_basis, identity_key)
+     values ('cdg','cdg-homme-plus','alert test jacket',2002,'known','ad_tag','test-alert|ad2002|jacket|wool')
      returning id`);
   itemId = item.rows[0].id;
 

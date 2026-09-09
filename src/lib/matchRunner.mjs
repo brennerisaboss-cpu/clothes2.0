@@ -27,8 +27,9 @@ import { suggestMatches, safeToApply } from './matchmaker.mjs';
  */
 async function findOrCreateItem(client, plan, brandId) {
   const { rows } = await client.query(
-    `insert into items (brand_id, subline_id, canonical_name, ad_year, ad_year_status, identity_key)
-     values ($1,$2,$3,$4,$5,$6)
+    `insert into items (brand_id, subline_id, canonical_name, ad_year, ad_year_status,
+                        ad_year_basis, identity_key)
+     values ($1,$2,$3,$4,$5,$6,$7)
      on conflict (identity_key) do update set identity_key = excluded.identity_key
      returning id`,
     [
@@ -37,6 +38,7 @@ async function findOrCreateItem(client, plan, brandId) {
       plan.canonicalName,
       plan.adYear ?? null,
       plan.adYearStatus ?? 'unknown',
+      plan.adYear == null ? null : (plan.adYearBasis ?? 'ad_tag'),
       plan.key,
     ],
   );

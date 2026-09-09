@@ -2,7 +2,7 @@ import Link from 'next/link';
 import NoData from '@/components/NoData';
 import Card, { type CardData } from '@/components/Card';
 import Filters from '@/components/Filters';
-import { listCards, facets, type GridFilters } from '@/lib/queries';
+import { listCards, countCards, facets, LISTING_CARD_LIMIT, type GridFilters } from '@/lib/queries';
 import { scoreListings, compareByScore, isFlagged, type SortKey } from '@/lib/scoreBoard';
 import { PageHead } from '@/components/Plate';
 
@@ -42,10 +42,20 @@ export default async function GridPage({
     sort: 'newest',
   };
 
-  const [cards, f] = await Promise.all([listCards(filters), facets()]);
+  // The count runs the same filter as the rows, so "showing 200 of 4,000" can
+  // never describe a different set from the one on screen.
+  const [cards, matching, f] = await Promise.all([
+    listCards(filters),
+    countCards(filters),
+    facets(),
+  ]);
   const scores = await scoreListings(cards);
 
   const ordered = [...cards].sort(compareByScore(sort, scores));
+  // Sorting happens in memory over what came back, so a cap that bit means the
+  // ranking is over a slice — and the sort controls above offer to rank by
+  // profit, which reads as a claim about everything.
+  const unshown = Math.max(0, matching - cards.length);
   const flaggedCount = cards.filter((c) => isFlagged(scores.get(c.id)?.best)).length;
   const scoredCount = [...scores.values()].filter((s) => s.best.scored).length;
 
@@ -60,7 +70,8 @@ export default async function GridPage({
         }
         annot={
           <>
-            {ordered.length} shown · {f.counts?.total ?? 0} tracked · {scoredCount} scored
+            {ordered.length} shown{unshown > 0 ? ` of ${matching} matching` : ''} ·{' '}
+            {f.counts?.total ?? 0} tracked · {scoredCount} scored
             {' · '}
             <Link
               href={showGone ? '/' : '/?gone=1'}
@@ -97,6 +108,17 @@ export default async function GridPage({
       />
 
       <Filters facets={f} />
+
+      {unshown > 0 ? (
+        <p className="border-l-2 border-accent pl-3 text-[13px] leading-snug">
+          <span className="font-semibold uppercase tracking-wide text-accent">
+            Showing the {cards.length} most recent
+          </span>{' '}
+          of {matching} matching listings, so this ranking is over a slice rather than over
+          everything. Narrow it with the filters above — by sub-line, source or price — and the
+          sort will mean what it says.
+        </p>
+      ) : null}
 
       {ordered.length === 0 ? (
         <NoData />

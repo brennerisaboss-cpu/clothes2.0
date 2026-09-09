@@ -97,6 +97,10 @@ export async function saveListing(input: SaveInput) {
         itemId = await findOrCreateItem(client, {
           brandId, sublineId, adYear, adYearStatus,
           canonicalName: title,
+          // The add form reads the year out of the title the same way a poll
+          // does, so it carries the same basis — unless the operator typed one
+          // into the AD-year field, in which case it is theirs.
+          adYearBasis: input.adYear ? 'manual' : (resolved.adYearBasis ?? 'ad_tag'),
           identityKey: identityForResolved({ sublineId, adYear, titleRaw: title, canonicalName: title }),
         });
       }
@@ -312,6 +316,14 @@ async function findOrCreateItem(
     adYearStatus: string;
     canonicalName: string;
     identityKey: string;
+    /**
+     * Where the year came from. Defaults to 'manual' because every caller here
+     * is a person: the add form and the two resolve screens. The automatic
+     * paths pass their own basis — an AD tag read off the garment, or a season
+     * code the seller wrote — and those are different kinds of claim from a
+     * year somebody typed after looking at the piece.
+     */
+    adYearBasis?: 'ad_tag' | 'season' | 'manual';
   },
 ) {
   // Insert-or-return in one statement, keyed on identity.
@@ -322,11 +334,18 @@ async function findOrCreateItem(
   // inserts succeed. The unique index on identity_key closes that window, and
   // ON CONFLICT turns the loser into a read rather than a crash.
   const upserted = await client.query<{ id: string }>(
-    `insert into items (brand_id, subline_id, canonical_name, ad_year, ad_year_status, identity_key)
-     values ($1, $2, $3, $4, $5, $6)
+    `insert into items (brand_id, subline_id, canonical_name, ad_year, ad_year_status,
+                        ad_year_basis, identity_key)
+     values ($1, $2, $3, $4, $5, $6, $7)
      on conflict (identity_key) do update set identity_key = excluded.identity_key
      returning id`,
-    [opts.brandId, opts.sublineId, opts.canonicalName, opts.adYear, opts.adYearStatus, opts.identityKey],
+    [
+      opts.brandId, opts.sublineId, opts.canonicalName, opts.adYear, opts.adYearStatus,
+      // Null when there is no year, which the schema requires: a basis with no
+      // year describes nothing.
+      opts.adYear == null ? null : (opts.adYearBasis ?? 'manual'),
+      opts.identityKey,
+    ],
   );
   return upserted.rows[0].id;
 }

@@ -69,11 +69,18 @@ async function findOrCreateItem({ brandId, sublineId, adYear, adYearStatus, cano
   // Keyed on identity, exactly as the app is: the fixture must exercise the
   // same pooling the real paths use, or it proves nothing about them.
   const made = await client.query(
-    `insert into items (brand_id, subline_id, canonical_name, ad_year, ad_year_status, identity_key)
-     values ($1,$2,$3,$4,$5,$6)
+    `insert into items (brand_id, subline_id, canonical_name, ad_year, ad_year_status,
+                        ad_year_basis, identity_key)
+     values ($1,$2,$3,$4,$5,$6,$7)
      on conflict (identity_key) do update set identity_key = excluded.identity_key
      returning id`,
-    [brand, sublineId, canonicalName, adYear, adYearStatus, identityKey],
+    [
+      brand, sublineId, canonicalName, adYear, adYearStatus,
+      // A year and where it came from travel together, by constraint. The
+      // fixture's years are written as AD tags, which is what they are.
+      adYear == null ? null : 'ad_tag',
+      identityKey,
+    ],
   );
   return made.rows[0].id;
 }

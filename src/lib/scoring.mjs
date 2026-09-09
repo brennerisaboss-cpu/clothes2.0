@@ -23,6 +23,7 @@
 import { summariseItem, MIN_COMPS } from './priceHistory.mjs';
 import { freshnessWeight } from './confidence.mjs';
 import { calibrate } from './calibration.mjs';
+import { weighBySize } from './size.mjs';
 
 // A listing far below its own resale median is disproportionately a scam, a
 // listing error, or a misrepresented condition. Score it, but never present it
@@ -107,7 +108,9 @@ function round(n) {
  * down-weighted: they answer a different question. A tier with fewer than
  * MIN_COMPS exit observations returns no estimate at all.
  */
-export function resaleEstimate(observations, conditionTier, now = new Date(), exitSourceId = null) {
+export function resaleEstimate(
+  observations, conditionTier, now = new Date(), exitSourceId = null, sizeRaw = null,
+) {
   // Retail is excluded outright, before role is even considered.
   //
   // A boutique's full price for a current-season piece is not a comp for a
@@ -146,6 +149,21 @@ export function resaleEstimate(observations, conditionTier, now = new Date(), ex
       venueScoped = true;
     }
   }
+
+  // What a comp in another size is worth against this one.
+  //
+  // Not a filter and not part of identity: one garment is one item however many
+  // sizes it was cut in, and splitting the pool by size would drop most items
+  // below the comp minimum and stop them being valued at all. It is evidence
+  // quality, alongside evidence class and recency — a comp in the size you are
+  // holding is a better answer to "what does THIS one fetch" than one three
+  // sizes away, whose buyer pool is a different size.
+  //
+  // Inert unless both sides state a size in a system this can read, so it
+  // demotes comps it can prove are the wrong size and never promotes one on an
+  // assumption.
+  const sized = weighBySize(exitComps, sizeRaw);
+  exitComps = sized.observations;
 
   const summary = summariseItem(exitComps, now);
   let assumedTier = null;
@@ -206,6 +224,13 @@ export function resaleEstimate(observations, conditionTier, now = new Date(), ex
     // this one. All of them, and the number is about a category, not a piece.
     borrowedComps: exitComps.filter((o) => o.borrowed).length,
     borrowedTotal: borrowedCount,
+    // Comps whose size can be compared with this listing's, and how many of
+    // those are a different size. Reported rather than folded away: a figure
+    // resting entirely on other sizes prices a different cut of the piece, and
+    // the row has to be able to say so.
+    sizeTarget: sized.target.ordinal == null ? null : sized.target.label,
+    sizeComparable: sized.comparable,
+    offSizeComps: sized.offSize,
     exitSourceId,
     // `value` is the number scoring uses. Below the minimum it falls back to
     // the provisional median, and the score is stamped `provisional` so the UI
@@ -246,7 +271,9 @@ export function scoreOpportunity({
     return { scored: false, reason: 'no route configured from this source to an exit venue', flags };
   }
 
-  const estimate = resaleEstimate(observations, listing.condition_tier, now, route.exit_source);
+  const estimate = resaleEstimate(
+    observations, listing.condition_tier, now, route.exit_source, listing.size_raw,
+  );
 
   // Correct by what pieces of this brand actually fetched on this venue, where
   // enough sales have been recorded to know. Below three it does nothing: a
@@ -483,6 +510,25 @@ export function scoreAllRoutes({
         message:
           'every comp is a different model of the same kind of piece — this ' +
           'prices the category, not this exact piece',
+      });
+    }
+
+    // Every comp whose size can be read is a different size from this piece.
+    //
+    // The weighting has already discounted them, which is the right treatment
+    // for a pool that is mostly the right size and partly not. It is the wrong
+    // treatment for a pool that is entirely the wrong size, because there is
+    // then nothing left holding the figure to this cut of the garment — and a
+    // discounted median still prints as a number. Same shape as other_models:
+    // the estimate stands, and the row says what it is about.
+    if (sc.scored && r && r.sizeComparable > 0 && r.offSizeComps === r.sizeComparable) {
+      sc.flags.push({
+        kind: 'off_size',
+        severity: 'medium',
+        message:
+          `every comp that states a size states a different one from ${r.sizeTarget} — ` +
+          'this prices the garment, not this size of it, and the buyer pool for a ' +
+          'size is most of what separates two prices for one piece',
       });
     }
   }

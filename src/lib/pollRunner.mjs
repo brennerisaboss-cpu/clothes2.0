@@ -9,6 +9,7 @@ import { planMatch } from './matching.mjs';
 import { assessCatalogue } from './plausibility.mjs';
 import { sublineById } from './brands/index.mjs';
 import { normalizeAlias } from './normalize.mjs';
+import { parseSize } from './size.mjs';
 
 class HostLimiter {
   constructor(minIntervalMs = 500) {
@@ -63,8 +64,9 @@ async function findOrCreateItem(client, plan) {
   // One statement, so two concurrent polls cannot both insert and split an
   // item's comps in half without either of them erroring.
   const { rows } = await client.query(
-    `insert into items (brand_id, subline_id, canonical_name, ad_year, ad_year_status, identity_key)
-     values ($1,$2,$3,$4,$5,$6)
+    `insert into items (brand_id, subline_id, canonical_name, ad_year, ad_year_status,
+                        ad_year_basis, identity_key)
+     values ($1,$2,$3,$4,$5,$6,$7)
      on conflict (identity_key) do update set identity_key = excluded.identity_key
      returning id`,
     [
@@ -73,6 +75,7 @@ async function findOrCreateItem(client, plan) {
       plan.canonicalName,
       plan.adYear ?? null,
       plan.adYearStatus ?? 'unknown',
+      plan.adYear == null ? null : (plan.adYearBasis ?? 'ad_tag'),
       plan.key,
     ],
   );
@@ -298,6 +301,7 @@ export async function runPoll({
 
   for (const { raw, plan, itemId } of relevant) {
     const conditionRaw = raw.conditionRaw ? String(raw.conditionRaw).trim() : null;
+    const sizeRegion = parseSize(raw.sizeRaw).region;
     const conditionTier = conditionRaw
       ? (tiers.get(normalizeAlias(conditionRaw).compact) ?? null)
       : null;
@@ -338,7 +342,7 @@ export async function runPoll({
          source_published_at, first_seen_at
        ) values (
          $16,
-         $1,$2,$3,$4,$5,'UNKNOWN',
+         $1,$2,$3,$4,$5,$19::size_region,
          -- The condition the source stated, and the tier it maps to on THIS
          -- source. A label with no mapping keeps its text and gets no tier:
          -- the unstated-condition rule then values it against the cheapest
@@ -381,6 +385,12 @@ export async function runPoll({
         itemId,
         conditionRaw,
         conditionTier,
+        // The sizing system the seller's own size string belongs to, where it
+        // can be read. Hardcoded 'UNKNOWN' before, which meant the column
+        // existed and said nothing on every automated row — and comps could
+        // never be told apart by size, since a size is only comparable within
+        // its own system.
+        sizeRegion,
       ],
     );
     if (supersedesId) {

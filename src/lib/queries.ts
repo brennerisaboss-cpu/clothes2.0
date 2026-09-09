@@ -74,7 +74,26 @@ export type GridFilters = {
   includeGone?: boolean;
 };
 
-export async function listCards(filters: GridFilters = {}): Promise<ListingCard[]> {
+/**
+ * How many cards one page of the grid holds.
+ *
+ * Same reasoning as SCORING_CANDIDATE_LIMIT, and the same failure it replaces:
+ * the cap was 200, the rows came back newest first, and nothing said when it
+ * bit — so past two hundred matching listings the grid quietly became a view of
+ * the two hundred most recent, while its own sort controls offered to rank by
+ * profit across "everything". `countCards` runs the same filter so the page can
+ * say what it is not showing.
+ */
+export const LISTING_CARD_LIMIT = 1000;
+
+/**
+ * The filter half of a grid query, built once.
+ *
+ * Shared by `listCards` and `countCards` so the count can never describe a
+ * different set from the rows — which is the only way a "showing 200 of 4,000"
+ * line is worth printing.
+ */
+function cardFilters(filters: GridFilters) {
   const where: string[] = [];
   const params: unknown[] = [];
   const add = (clause: string, value: unknown) => {
@@ -104,9 +123,7 @@ export async function listCards(filters: GridFilters = {}): Promise<ListingCard[
   // one it supersedes. The grid shows current state, so superseded rows are
   // hidden here — they remain in the table and on the item detail page, which
   // is where the price history belongs.
-  if (!filters.includeSuperseded) {
-    where.push('not exists (select 1 from listings sup where sup.supersedes_id = l.id)');
-  }
+  if (!filters.includeSuperseded) where.push(HEAD_OF_CHAIN);
 
   // A piece that is gone is not a thing to buy.
   //
@@ -120,9 +137,7 @@ export async function listCards(filters: GridFilters = {}): Promise<ListingCard[
   // at a price is evidence of what that piece moves for, which is exactly the
   // scarce kind of evidence resale value needs — so they stay in the table, keep
   // contributing as comps, and are one filter away.
-  if (!filters.includeGone) {
-    where.push("l.status in ('active', 'relisted')");
-  }
+  if (!filters.includeGone) where.push("l.status in ('active', 'relisted')");
 
   if (!filters.includeDismissed) {
     where.push(`not exists (
@@ -131,6 +146,12 @@ export async function listCards(filters: GridFilters = {}): Promise<ListingCard[
          and ra.created_at = (select max(created_at) from review_actions r2 where r2.listing_id = l.id)
     )`);
   }
+
+  return { clause: where.length ? `where ${where.join(' and ')}` : '', params };
+}
+
+export async function listCards(filters: GridFilters = {}): Promise<ListingCard[]> {
+  const { clause, params } = cardFilters(filters);
 
   const sorts: Record<string, string> = {
     newest: 'l.date_seen desc',
@@ -142,11 +163,32 @@ export async function listCards(filters: GridFilters = {}): Promise<ListingCard[
   const orderBy = sorts[filters.sort ?? 'newest'] ?? sorts.newest;
 
   const sql = `${CARD_SELECT}
-    ${where.length ? `where ${where.join(' and ')}` : ''}
+    ${clause}
     order by ${orderBy}
-    limit 200`;
+    limit ${LISTING_CARD_LIMIT}`;
 
   return query<ListingCard>(sql, params);
+}
+
+/**
+ * How many listings match a set of grid filters, cap or no cap.
+ *
+ * The join list mirrors CARD_SELECT's exactly, because the filters reference
+ * `sub` and `i` and a count over a narrower join would answer a different
+ * question from the one the rows answered.
+ */
+export async function countCards(filters: GridFilters = {}): Promise<number> {
+  const { clause, params } = cardFilters(filters);
+  const row = await one<{ n: number }>(
+    `select count(*)::int as n
+       from listings l
+       join sources s on s.id = l.source_id
+       left join items i on i.id = l.item_id
+       left join sublines sub on sub.id = i.subline_id
+     ${clause}`,
+    params,
+  );
+  return Number(row?.n ?? 0);
 }
 
 export async function getListing(id: string) {
@@ -226,12 +268,15 @@ export type ItemRow = {
   subline_name: string | null;
   ad_year: number | null;
   ad_year_status: string;
+  /** Whether the year is off the garment's tag, off a season code, or typed. */
+  ad_year_basis: 'ad_tag' | 'season' | 'manual' | null;
   listing_count: number;
 };
 
 export async function getItem(id: string) {
   return one<ItemRow>(
     `select i.id, i.canonical_name, i.subline_id, i.ad_year, i.ad_year_status,
+            i.ad_year_basis,
             sub.display_name as subline_name,
             (select count(*) from listings l where l.item_id = i.id)::int as listing_count
        from items i
@@ -302,6 +347,7 @@ export async function listItems(sort: ItemSort = 'name') {
     ItemRow & { lowest_active: number | null; exit_comps: number; last_seen: Date | null }
   >(
     `select i.id, i.canonical_name, i.subline_id, i.ad_year, i.ad_year_status,
+            i.ad_year_basis,
             sub.display_name as subline_name,
             (select count(*) from listings l where l.item_id = i.id)::int as listing_count,
             (select count(*) from listings l

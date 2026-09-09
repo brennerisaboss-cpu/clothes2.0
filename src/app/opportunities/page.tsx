@@ -326,6 +326,7 @@ export default async function OpportunitiesPage({
                           (f) =>
                             f.kind === 'uncalibrated_venue' ||
                             f.kind === 'other_models' ||
+                            f.kind === 'off_size' ||
                             universal(f),
                         );
                         const all = [...shown, ...always.filter((f) => !shown.includes(f))];

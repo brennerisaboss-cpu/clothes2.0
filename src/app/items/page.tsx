@@ -84,6 +84,16 @@ export default async function ItemsPage({
                   <td className="p-2 text-muted">{i.subline_name ?? '—'}</td>
                   <td className="p-2 text-muted">
                     {i.ad_year ?? (i.ad_year_status === 'pre_ad_era' ? 'pre-AD' : '—')}
+                    {/* A year off a season code is the same number as one off an
+                        AD tag and not the same kind of claim: one is printed on
+                        the garment, the other is what a seller wrote about when
+                        they think it was made. Marked, so the inference is
+                        visible on the screen that pools on it. */}
+                    {i.ad_year_basis === 'season' ? (
+                      <span className="ml-1 text-[10px] uppercase tracking-wide text-accent">
+                        season
+                      </span>
+                    ) : null}
                   </td>
                   <td className="p-2 text-muted">{i.listing_count}</td>
                   <td className="p-2">

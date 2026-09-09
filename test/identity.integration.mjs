@@ -44,11 +44,18 @@ async function itemFor(title) {
   const plan = planMatch({ title_raw: title });
   assert.equal(plan.matchable, true, `"${title}" should be matchable: ${plan.reason}`);
   const { rows } = await client.query(
-    `insert into items (brand_id, subline_id, canonical_name, ad_year, ad_year_status, identity_key)
-     values ((select brand_id from sublines where id = $1), $1, $2, $3, $4, $5)
+    `insert into items (brand_id, subline_id, canonical_name, ad_year, ad_year_status,
+                        ad_year_basis, identity_key)
+     values ((select brand_id from sublines where id = $1), $1, $2, $3, $4, $5, $6)
      on conflict (identity_key) do update set identity_key = excluded.identity_key
      returning id, canonical_name`,
-    [plan.sublineId, plan.canonicalName, plan.adYear, plan.adYearStatus, plan.key],
+    [
+      plan.sublineId, plan.canonicalName, plan.adYear, plan.adYearStatus,
+      // The schema makes the year and its provenance travel together, so a
+      // fixture states it the same way the application does.
+      plan.adYear == null ? null : (plan.adYearBasis ?? 'ad_tag'),
+      plan.key,
+    ],
   );
   return rows[0];
 }
@@ -74,8 +81,9 @@ test('the unique index refuses a second item for one identity', async () => {
   await assert.rejects(
     () =>
       client.query(
-        `insert into items (brand_id, subline_id, canonical_name, ad_year, ad_year_status, identity_key)
-         values ('cdg','cdg-homme-plus','duplicate',2011,'known','cdg-homme-plus|ad2011|jacket|wool|?')`,
+        `insert into items (brand_id, subline_id, canonical_name, ad_year, ad_year_status,
+                        ad_year_basis, identity_key)
+         values ('cdg','cdg-homme-plus','duplicate',2011,'known','ad_tag','cdg-homme-plus|ad2011|jacket|wool|?')`,
       ),
     /unique|duplicate key/i,
     'the database must be what stops an item being split in two',

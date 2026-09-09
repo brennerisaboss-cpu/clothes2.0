@@ -23,10 +23,11 @@ import * as guidi from './guidi.mjs';
 import * as bbs from './bbs.mjs';
 import * as rickOwens from './rickOwens.mjs';
 import * as issey from './issey.mjs';
+import * as margiela from './margiela.mjs';
 import * as artisanal from './artisanal.mjs';
 import * as japanese from './japanese.mjs';
 
-const MODULES = [cdg, yohji, ann, ccp, guidi, bbs, rickOwens, issey];
+const MODULES = [cdg, yohji, ann, ccp, guidi, bbs, rickOwens, issey, margiela];
 
 // Two modules hold several small houses each: brands with no diffusion lines
 // and few naming quirks do not each need a file, and keeping them together

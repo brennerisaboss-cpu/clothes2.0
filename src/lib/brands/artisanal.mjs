@@ -78,6 +78,44 @@ const { brands, sublines, aliases } = expand([
   },
   { id: 'taiga', name: 'Taiga Takahashi', aliases: ['Taiga'] },
   { id: 'ziggy-kollar', name: 'Kollar', aliases: ['Kollar Clothing'], ambiguous: true },
+
+  // Two houses whose archive is unavoidable on these venues and which the
+  // roster simply did not carry, so every listing of either resolved to
+  // nothing and went to /unresolved for ever.
+  {
+    id: 'raf',
+    name: 'Raf Simons',
+    aliases: ['RafSimons', 'Raf Simons Archive'],
+    ja: ['ラフシモンズ'],
+    note: 'The mainline archive, roughly 1995–2005, is what carries value. His work at other houses is those houses, not this one, and is not modelled here.',
+    extraSublines: [
+      {
+        id: 'raf-adidas',
+        name: 'Raf Simons x adidas',
+        aliases: ['Raf Simons adidas', 'Raf Adidas', 'Ozweego'],
+        monitored: false,
+        note: 'Sneaker collaboration — high volume, low archive value. Excluded by default, like Y-3 and Rick Owens x adidas.',
+      },
+    ],
+  },
+  {
+    id: 'helmut',
+    name: 'Helmut Lang',
+    aliases: ['HelmutLang'],
+    ja: ['ヘルムートラング'],
+    // Deliberately one line rather than an archive/modern split.
+    //
+    // The house has two eras that share a name and almost nothing else: Lang
+    // himself left in 2005, and the value sits overwhelmingly before that. The
+    // tempting fix is a sub-line per era, and it cannot work from a title —
+    // "Helmut Lang" is what a seller writes for both, so the split would land
+    // on whether someone happened to type "archive" rather than on when the
+    // piece was made. The era is a segment of the identity key and season codes
+    // now populate it, so a title stating a year separates the two properly and
+    // one stating none pools coarsely. That is the fact the title carries,
+    // reported as it is.
+    note: 'Two eras under one name; the pre-2005 archive is where the value is. The year segment separates them where a title states one.',
+  },
 ]);
 
 export { brands, sublines, aliases };

@@ -58,13 +58,21 @@ export function weightedMedian(entries) {
  * Weight combines evidence class with recency: three comps from last month
  * should beat twenty from two years ago. Manual entries additionally decay by
  * how long since you last verified them.
+ *
+ * `sizeWeight` is the third factor and is attached by the caller rather than
+ * computed here, because it is the only one that depends on what is being
+ * valued rather than on the observation alone: a comp is not intrinsically the
+ * wrong size, it is the wrong size FOR a particular piece. Absent, it is 1 —
+ * which is the honest default, since an unread size is compatible with any size
+ * and only a stated one that differs is evidence of a difference.
  */
 export function observationWeight(obs, now = new Date()) {
   const evidence = EVIDENCE_WEIGHT[obs.evidence] ?? EVIDENCE_WEIGHT.inferred_disappearance;
   const recency = obs.entered_manually
     ? freshnessWeight(obs.last_verified_at ?? obs.date_seen, now)
     : freshnessWeight(obs.date_seen, now);
-  return Number((evidence * recency).toFixed(4));
+  const size = Number.isFinite(Number(obs.sizeWeight)) ? Number(obs.sizeWeight) : 1;
+  return Number((evidence * recency * size).toFixed(4));
 }
 
 function summariseTier(tier, observations, now) {

@@ -92,12 +92,15 @@ try {
     if (!brandId) continue;
 
     const { rows } = await client.query(
-      `insert into items (brand_id, subline_id, canonical_name, ad_year, ad_year_status, identity_key)
-       values ($1,$2,$3,$4,$5,$6)
+      `insert into items (brand_id, subline_id, canonical_name, ad_year, ad_year_status,
+                          ad_year_basis, identity_key)
+       values ($1,$2,$3,$4,$5,$6,$7)
        on conflict (identity_key) do update set identity_key = excluded.identity_key
        returning id`,
       [brandId, plan.sublineId, plan.canonicalName, plan.adYear ?? null,
-       plan.adYearStatus ?? 'unknown', plan.key],
+       plan.adYearStatus ?? 'unknown',
+       plan.adYear == null ? null : (plan.adYearBasis ?? 'ad_tag'),
+       plan.key],
     );
     await client.query('update listings set item_id = $1 where id = $2', [rows[0].id, listingId]);
   }

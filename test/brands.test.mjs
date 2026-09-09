@@ -138,3 +138,73 @@ test('a common English word brand is flagged rather than auto-matched', () => {
   assert.equal(r.ambiguous, true);
   assert.equal(r.confident, false);
 });
+
+// ---------------------------------------------------------------------------
+// A numeric edge must land on a numeric boundary
+// ---------------------------------------------------------------------------
+
+test('an alias ending in a digit does not match inside a longer number', () => {
+  // "margiela1" is a prefix of "margiela1998", so Line 1 claimed every Martin
+  // era piece whose seller wrote the year. A wrong sub-line does not fail: it
+  // pools a garment into another line's comp set and prices it there.
+  assert.equal(
+    resolveBrand('Maison Martin Margiela 1998 leather jacket').sublineId,
+    'mm-mainline',
+  );
+  assert.equal(resolveBrand('Maison Margiela Line 1 wool coat').sublineId, 'mm-line-1');
+
+  // The same hazard across the rest of the roster: Guidi names derbies "6006",
+  // and a longer code is a different shoe.
+  assert.equal(resolveBrand('Guidi 6006 derby leather').sublineId, 'guidi-derbies');
+  assert.notEqual(resolveBrand('Guidi 60060 derby leather').sublineId, 'guidi-derbies');
+});
+
+test('an alias starting with a digit does not match inside a longer number', () => {
+  assert.equal(resolveBrand('Issey Miyake 132 5 pleated top').sublineId, 'im-132-5');
+  assert.notEqual(resolveBrand('Issey Miyake 4132 5 pleated top').sublineId, 'im-132-5');
+});
+
+test('the numeric guard leaves the plus guard alone', () => {
+  // Both rules live in the same loop; neither may swallow the other.
+  assert.equal(
+    resolveBrand('Comme des Garcons Homme Plus AD2002 wool jacket').sublineId,
+    'cdg-homme-plus',
+  );
+  assert.equal(resolveBrand('Comme des Garcons Homme wool jacket').sublineId, 'cdg-homme');
+});
+
+// ---------------------------------------------------------------------------
+// Houses added to the roster
+// ---------------------------------------------------------------------------
+
+test('Margiela resolves its named lines and defaults to the mainline', () => {
+  // Rick Owens' pattern rather than Yohji's: there is a real mainline, and the
+  // line number is on the tag rather than in the title, so treating every
+  // "Maison Margiela wool coat" as unresolvable would send most of the house to
+  // be settled by hand.
+  assert.equal(resolveBrand('Maison Margiela wool coat').sublineId, 'mm-mainline');
+  assert.equal(resolveBrand('マルジェラ ウール コート').sublineId, 'mm-mainline');
+  assert.equal(resolveBrand('MM6 Maison Margiela denim skirt').sublineId, 'mm-line-6');
+  assert.equal(resolveBrand('Margiela Tabi boots leather').sublineId, 'mm-footwear');
+});
+
+test('the two Margiela names are one house, separated by year and not by wording', () => {
+  // Sellers use "Maison Martin Margiela" and "Maison Margiela" interchangeably
+  // for the same garment, so splitting on the name would halve one piece's
+  // comps on a wording nobody is careful about. The era does the separating.
+  const martin = resolveBrand('Maison Martin Margiela wool coat');
+  const current = resolveBrand('Maison Margiela wool coat');
+  assert.equal(martin.sublineId, current.sublineId);
+});
+
+test('Raf Simons and Helmut Lang resolve, and the sneaker collab does not', () => {
+  assert.equal(resolveBrand('Raf Simons oversized bomber jacket').sublineId, 'raf-mainline');
+  assert.equal(resolveBrand('ラフシモンズ ニット').sublineId, 'raf-mainline');
+  assert.equal(resolveBrand('Helmut Lang SS98 bondage trousers').sublineId, 'helmut-mainline');
+
+  // Excluded from monitoring the same way Y-3 and Rick Owens x adidas are:
+  // recognised, so it can be kept out, rather than silently pooled.
+  const ozweego = resolveBrand('Raf Simons Ozweego sneakers');
+  assert.equal(ozweego.sublineId, 'raf-adidas');
+  assert.equal(ozweego.monitored, false);
+});
