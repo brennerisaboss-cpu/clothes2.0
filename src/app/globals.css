@@ -1,0 +1,303 @@
+/* Type.
+ *
+ * One face, a geometric grotesque, doing everything. The previous pass ran two
+ * — a didone display and an old-style italic for captions — and that pairing
+ * is what made every screen read as a museum label: the italic serif turned
+ * working notes into commentary, and the didone turned a table header into a
+ * frontispiece.
+ *
+ * The references are not specimen sheets. They are mid-century Japanese and
+ * Swiss print and the YMO sleeve: one grotesque, set large and tight, doing
+ * both the shouting and the whispering, with size and weight carrying the
+ * hierarchy instead of a change of voice.
+ *
+ * Archivo has the width range that needs — a condensed-ish upright with a real
+ * heavy — and falls back to Helvetica Neue and Inter, which are close enough
+ * that a machine with no network looks the same rather than broken. The
+ * Japanese faces stay last: no Latin face covers kana, and a Japanese title
+ * must never fall back to something arbitrary. */
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Archivo+Narrow:wght@500;600;700&display=swap');
+
+@import 'tailwindcss';
+
+/* Palette.
+ *
+ * Paper, ink, and one red. That is the whole of it, and the discipline is the
+ * point: the previous palette had a cream, a second cream, a madder, an ochre,
+ * an indigo and a green, and the screens went muddy — nothing could be
+ * emphatic because six things were already competing.
+ *
+ * The paper is a cool near-white rather than the sepia it was. Sepia reads as
+ * aged, and this is a tool used at speed; the references print on uncoated
+ * stock, which is warm-white, not tea-stained.
+ *
+ * Measured against the paper: ink 17.4:1, muted 6.4:1, red 5.1:1, green 5.4:1.
+ * All clear AA at body size, and the red clears AA against ink as well, which
+ * it must — it lands on black blocks. */
+@theme {
+  --color-ink: #f7f6f2;          /* the paper */
+  --color-panel: #eae9e3;        /* a filled block on it */
+  --color-edge: #d3d0c6;         /* hairline */
+  --color-edge-strong: #14130f;  /* the heavy rule under a heading */
+  --color-fg: #14130f;           /* ink */
+  --color-muted: #5a5850;
+  --color-accent: #d92b1c;       /* the one red */
+  --color-alarm: #d92b1c;
+  --color-warn: #8a5a00;
+  --color-ok: #16704a;
+  --color-madder: #d92b1c;
+  --color-indigo: #22324a;
+
+  --font-sans: 'Archivo', 'Helvetica Neue', Helvetica, Inter, system-ui,
+    'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+  --font-display: 'Archivo Narrow', 'Archivo', 'Helvetica Neue', Helvetica,
+    system-ui, 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Roboto Mono', Menlo, monospace;
+}
+
+/* The ground.
+ *
+ * Flat. The dotted lattice and the paper grain are gone: they were legible as
+ * texture on an empty screen and as noise behind a dense table, which is where
+ * this actually lives. */
+html {
+  background: var(--color-ink);
+  color: var(--color-fg);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  letter-spacing: 0.005em;
+}
+
+/* Headings are objects: set large, tight and uppercase, with the weight doing
+ * the work. No ornament beside them, no plate number, no mark — the reference
+ * covers put type on a ground and stop. */
+h1 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.75rem, 3.2vw, 2.5rem);
+  line-height: 0.95;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+}
+
+h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+h3 { font-weight: 600; letter-spacing: 0.01em; }
+
+/* A note beside a heading. Same face, small, quiet — not a second voice. The
+ * italic serif this replaces made every count and caveat read as an aside in
+ * someone else's handwriting. */
+.annot {
+  font-family: var(--font-sans);
+  font-style: normal;
+  color: var(--color-muted);
+  letter-spacing: 0.01em;
+}
+
+/* A label above a control: the smallest type on the page, tracked wide, which
+ * is how a Swiss form sheet marks a field. */
+.label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  margin-bottom: 4px;
+}
+
+/* Controls. Square, hairlined, flat — no shadow, no radius, no gradient. */
+.field {
+  width: 100%;
+  background: var(--color-ink);
+  color: var(--color-fg);
+  border: 1px solid var(--color-edge);
+  border-radius: 0;
+  padding: 7px 9px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.field:focus {
+  outline: none;
+  border-color: var(--color-fg);
+  box-shadow: inset 0 0 0 1px var(--color-fg);
+}
+
+.field::placeholder { color: color-mix(in oklab, var(--color-muted) 65%, transparent); }
+
+select.field {
+  appearance: none;
+  padding-right: 26px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--color-fg) 50%),
+    linear-gradient(135deg, var(--color-fg) 50%, transparent 50%);
+  background-position: right 12px center, right 7px center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+/* Buttons are blocks of ink. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-fg);
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-fg);
+  padding: 6px 14px;
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.btn:hover { background: var(--color-fg); color: var(--color-ink); }
+
+.btn-primary {
+  background: var(--color-fg);
+  color: var(--color-ink);
+}
+
+.btn-primary:hover { background: var(--color-accent); border-color: var(--color-accent); }
+
+.btn:disabled,
+.btn:disabled:hover {
+  opacity: 0.35;
+  cursor: not-allowed;
+  background: transparent;
+  color: var(--color-fg);
+}
+
+/* The masthead. A black bar with the name reversed out of it — the one place
+ * the page goes solid, so everything below can stay quiet. */
+.masthead {
+  background: var(--color-fg);
+  color: var(--color-ink);
+  /* The one red line on the page, holding the black bar down. It is the move
+     the reference sleeves make: a field of ink, cut off by a single rule. */
+  border-bottom: 3px solid var(--color-accent);
+}
+
+.masthead a { color: color-mix(in oklab, var(--color-ink) 78%, var(--color-fg)); }
+.masthead a:hover { color: var(--color-ink); }
+
+.masthead a.is-active {
+  color: var(--color-ink);
+  box-shadow: inset 0 -3px 0 var(--color-accent);
+}
+
+.wordmark {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+}
+
+/* A heading and the rule under it. The rule is heavy and full width; that
+ * single line is what makes a screen look set rather than assembled. */
+.plate {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  border-bottom: 2px solid var(--color-edge-strong);
+  padding-bottom: 6px;
+}
+
+/* A section's number, when it has one: small, red, and beside the title rather
+ * than in a slot of its own. */
+.plate-no {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--color-accent);
+}
+
+/* Tables. Rules, not boxes: a heavy rule under the header, hairlines between
+ * rows, nothing around the outside. */
+table { border-collapse: collapse; width: 100%; }
+
+thead th {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 2px solid var(--color-edge-strong);
+  background: transparent;
+}
+
+tbody td { padding: 8px; border-bottom: 1px solid var(--color-edge); vertical-align: top; }
+tbody tr:hover { background: var(--color-panel); }
+
+/* Figures line up in a column or they are not figures. */
+.num, td.num, .tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* A card: hairline, square, flat. The shadowed "sheet" is gone — a shadow says
+ * an object floats, and nothing here floats. */
+.card {
+  background: var(--color-ink);
+  border: 1px solid var(--color-edge);
+}
+
+.card.is-positive { border-left: 3px solid var(--color-ok); }
+.card.is-flagged { border-left: 3px solid var(--color-accent); }
+
+/* Inline colour, kept for the places that name it directly. */
+.ink-madder { color: var(--color-accent); }
+.ink-indigo { color: var(--color-indigo); }
+
+a { color: inherit; }
+a:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--color-panel);
+  padding: 1px 4px;
+}
+
+/* Square, everywhere.
+ *
+ * The pages still carry Tailwind's rounded-xl from the look this replaces —
+ * on cards, badges, table wrappers, twenty files of it. Corners are squared
+ * once here rather than in a diff that touches every page and risks changing
+ * something that is not decoration. A rounded corner is a soft, screen-native
+ * shape and there is not one on any of the references. */
+[class*="rounded"] {
+  border-radius: 0 !important;
+}
+
+/* Focus is visible and square, everywhere, without exception. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* Print: the one place the paper is literal. */
+@media print {
+  .masthead, .no-print { display: none; }
+  body { font-size: 11px; }
+}

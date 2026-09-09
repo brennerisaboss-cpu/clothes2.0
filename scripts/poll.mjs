@@ -1,0 +1,145 @@
+// Poll every feed source once.
+//
+//   node scripts/poll.mjs [--source <id>]
+//
+// Intended to be driven by a scheduled function (Vercel Cron) in production.
+// Poll cadence is per source: a fast marketplace turns over in minutes, a
+// one-person archive shop in weeks, and applying one schedule to both is either
+// rude or useless.
+
+import pg from 'pg';
+import { collectingUserAgent, NO_CONTACT_WARNING } from '../src/lib/userAgent.mjs';
+import { runPoll } from '../src/lib/pollRunner.mjs';
+import * as shopify from '../src/lib/adapters/shopify.mjs';
+import * as woocommerce from '../src/lib/adapters/woocommerce.mjs';
+import * as yahooShopping from '../src/lib/adapters/yahooShopping.mjs';
+import * as rakuten from '../src/lib/adapters/rakuten.mjs';
+import * as ebay from '../src/lib/adapters/ebay.mjs';
+import * as merchantFeed from '../src/lib/adapters/merchantFeed.mjs';
+import * as page from '../src/lib/adapters/page.mjs';
+import { fetchRates, isFresh } from '../src/lib/adapters/fx.mjs';
+
+const ADAPTERS = {
+  shopify, woocommerce, yahoo_shopping: yahooShopping, rakuten, ebay,
+  merchant_feed: merchantFeed,
+  // The shop with no feed and no key. Reads the results page itself, the way
+  // copying it reads it, and always reports the catalogue as incomplete — so
+  // it can add and re-price, and can never conclude anything is gone.
+  page,
+};
+
+// One builder, and it refuses rather than inventing. The previous default
+// wrote "contact not set" into the User-Agent — a request that was asked to
+// identify itself and declined in words, which is what Wikimedia answers 403 to.
+// Polling sources that are already configured must not stop for want of a
+// contact: refusing here collects nothing at all, which is a worse failure than
+// an unidentified request to a shop that never asked for one.
+const { ua: UA, anonymous } = collectingUserAgent();
+if (anonymous) console.warn(`\n${NO_CONTACT_WARNING}`);
+
+const idx = process.argv.indexOf('--source');
+const only = idx > -1 ? process.argv[idx + 1] : null;
+
+const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+await client.connect();
+
+const { rows: sources } = await client.query(
+  `select * from sources
+    where tier = 'feed' and automation_allowed
+      and permission_status <> 'declined'
+      ${only ? 'and id = $1' : ''}
+    order by id`,
+  only ? [only] : [],
+);
+
+if (!sources.length) {
+  console.log('No feed sources configured. Manual-tier sources are never polled.');
+  await client.end();
+  process.exit(0);
+}
+
+// Rates before listings, always.
+//
+// price_base is stamped once, at insert. A snapshot taken while its currency
+// has no rate is stored unconvertible and stays that way — invisible to every
+// comparison in the platform rather than merely approximate — because a
+// listing whose price never changes is never re-inserted. So the conversion
+// layer is made current first, and a source whose currency still has no rate
+// afterwards is skipped rather than ingested into a hole.
+const BASE = (process.env.BASE_CURRENCY ?? 'EUR').toUpperCase();
+const needed = [...new Set(sources.map((s) => s.config?.currency).filter(Boolean))]
+  .map((c) => c.toUpperCase());
+
+const fx = await fetchRates({ baseCurrency: BASE, currencies: needed, userAgent: UA });
+if (fx.ok) {
+  for (const r of fx.listings) {
+    await client.query(
+      `insert into fx_rates (base_currency, quote_currency, rate, as_of, source)
+       values ($1, $2, $3, $4::date, 'ecb_via_frankfurter')
+       on conflict (base_currency, quote_currency, as_of) do update set rate = excluded.rate`,
+      [r.from, r.to, r.rate, r.asOf],
+    );
+  }
+  const asOf = fx.listings[0]?.asOf;
+  if (fx.listings.length) {
+    console.log(`  fx: ${fx.listings.length} rates into ${BASE}, fixed ${asOf}`);
+    if (!isFresh(asOf)) console.warn(`  fx: publisher's own fixing looks stale (${asOf})`);
+  }
+  if (fx.note) console.warn(`  fx: ${fx.note}`);
+} else {
+  // Not fatal on its own: rates already in the log may still be current enough
+  // to convert today's poll. It is only fatal per source, checked below.
+  console.warn(`  fx: refresh failed — ${fx.error}; using the rates already stored`);
+}
+
+const { rows: covered } = await client.query(
+  `select distinct base_currency from fx_rates where quote_currency = $1`,
+  [BASE],
+);
+const haveRate = new Set([BASE, ...covered.map((r) => r.base_currency)]);
+
+for (const source of sources) {
+  const adapterId = source.config?.adapter ?? 'shopify';
+  const adapter = ADAPTERS[adapterId];
+  if (!adapter) {
+    console.error(`  ${source.id}: no adapter "${adapterId}"`);
+    continue;
+  }
+
+  const currency = source.config?.currency?.toUpperCase();
+  if (currency && !haveRate.has(currency)) {
+    // Skipping loses one poll. Ingesting would lose the prices permanently.
+    console.warn(
+      `  ${source.id}: SKIPPED — no ${currency}->${BASE} rate, so its prices ` +
+        `could not be compared. Run npm run fx.`,
+    );
+    continue;
+  }
+
+  const started = Date.now();
+  const result = await runPoll({
+    client,
+    source,
+    adapter,
+    baseCurrency: process.env.BASE_CURRENCY ?? 'EUR',
+    userAgent: UA,
+  });
+  const ms = Date.now() - started;
+
+  if (result.ok) {
+    console.log(
+      `  ${source.id}: ok — ${result.count} seen, ${result.kept} on-brand, ` +
+        `${result.inserted} new/changed, ${result.delisted} delisted, ` +
+        `${result.relisted} relisted (${ms}ms)`,
+    );
+    // The prices were recorded; the silences were not read as absences. Worth
+    // saying every time rather than once, because it is the standing limit of
+    // a source like this and not a transient condition.
+    if (result.partial) console.log(`        nothing marked gone — ${result.partial}`);
+  } else {
+    // A vetoed poll is a normal, expected outcome, not a crash. Nothing changed.
+    console.warn(`  ${source.id}: NOT APPLIED — ${result.error} (${ms}ms)`);
+  }
+}
+
+await client.end();

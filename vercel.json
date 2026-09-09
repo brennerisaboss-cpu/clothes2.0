@@ -1,0 +1,15 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "comment": "Poll feed sources. Cadence is per source in the database; this is the outer tick.",
+      "path": "/api/cron/poll",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "comment": "Score and alert, straight after the poll so latency stays small.",
+      "path": "/api/cron/alert",
+      "schedule": "3,18,33,48 * * * *"
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+#!/bin/bash
+# The macOS application.
+#
+# The bundle normally sits inside the project folder, so the project is three
+# levels up from this executable:
+#
+#   <project>/Resale Tracker.app/Contents/MacOS/resale-tracker
+#
+# Except when macOS decides otherwise. An unsigned app carrying a quarantine
+# flag — which everything downloaded from the internet has — is launched under
+# APP TRANSLOCATION: Gatekeeper copies the bundle alone to a random read-only
+# mount under /private/var/folders/…/AppTranslocation/ and runs it from there.
+# The project is then nowhere near it, and computing a relative path finds
+# nothing. That is not a misplaced app and must not be reported as one.
+#
+# So the project is located in three ways, in order of reliability.
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+STAMP="$HERE/../Resources/project-path"
+PROJECT=""
+
+# 1. A path written in by scripts/install-macos.command. Survives translocation,
+#    because it does not depend on where the bundle is running from.
+if [ -f "$STAMP" ]; then
+  candidate="$(cat "$STAMP")"
+  [ -f "$candidate/start.command" ] && PROJECT="$candidate"
+fi
+
+# 2. The folder the bundle is sitting in.
+if [ -z "$PROJECT" ]; then
+  candidate="$(cd "$HERE/../../.." 2>/dev/null && pwd)"
+  [ -n "$candidate" ] && [ -f "$candidate/start.command" ] && PROJECT="$candidate"
+fi
+
+if [ -z "$PROJECT" ]; then
+  # 3. Neither worked. Say which of the two situations this is, because the
+  #    remedies are completely different.
+  if [[ "$HERE" == *"/AppTranslocation/"* ]]; then
+    osascript -e 'display alert "One-time macOS step" message "macOS is running this app from a temporary read-only copy, because it was downloaded from the internet and is not signed by a paid Apple developer account. From there it cannot see the project folder.
+
+Two ways to fix it, both permanent:
+
+• Double-click start.command in the project folder instead — it does exactly the same thing and is unaffected by this.
+
+• Or double-click Install on macOS.command in the project folder once. That clears the download flag and teaches this app where the project lives, after which it opens normally." as informational'
+  else
+    osascript -e 'display alert "Resale Tracker" message "This app launches the project sitting next to it, and that folder is not there any more.
+
+Move the app back into the project folder, or run Install on macOS.command from the project to point this app at it." as critical'
+  fi
+  exit 1
+fi
+
+# A folder that came out of a downloaded ZIP has no executable bits. That is a
+# silent failure — double-clicking simply does nothing — so repair it here.
+chmod +x "$PROJECT/start.command" "$PROJECT/start.sh" "$PROJECT/scripts/bootstrap-node.sh" 2>/dev/null
+
+# Hand off to a Terminal window rather than running silently. The first launch
+# installs dependencies, provisions a database and builds — a couple of minutes
+# during which a silent app looks broken and gets double-clicked again.
+open -a Terminal "$PROJECT/start.command"

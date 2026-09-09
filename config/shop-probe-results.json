@@ -1,0 +1,160 @@
+[
+  {
+    "name": "Open",
+    "domain": "open.test",
+    "region": null,
+    "permission_status": "not_asked",
+    "robots": {
+      "fetched": true,
+      "status": 200,
+      "crawlDelay": null,
+      "rules": {
+        "/": "allowed",
+        "/products.json": "allowed",
+        "/collections/all": "allowed",
+        "/wp-json/": "allowed"
+      }
+    },
+    "platform": "shopify",
+    "productsJson": {
+      "checked": true,
+      "allowed": true,
+      "status": 200,
+      "productCount": 1,
+      "note": null
+    },
+    "verdict": "usable — public product feed",
+    "notes": []
+  },
+  {
+    "name": "Blocked",
+    "domain": "blocked.test",
+    "region": null,
+    "permission_status": "not_asked",
+    "robots": {
+      "fetched": true,
+      "status": 200,
+      "crawlDelay": null,
+      "rules": {
+        "/": "allowed",
+        "/products.json": "disallowed (Disallow: /products.json)",
+        "/collections/all": "allowed",
+        "/wp-json/": "allowed"
+      }
+    },
+    "platform": "shopify",
+    "productsJson": {
+      "checked": false,
+      "allowed": false,
+      "status": null,
+      "productCount": null,
+      "note": "robots.txt disallows this path — not requested"
+    },
+    "verdict": "manual-only — robots.txt disallows the feed",
+    "notes": []
+  },
+  {
+    "name": "Forbidden",
+    "domain": "forbidden.test",
+    "region": null,
+    "permission_status": "not_asked",
+    "robots": {
+      "fetched": false,
+      "status": 403,
+      "crawlDelay": null,
+      "rules": {}
+    },
+    "platform": "unknown",
+    "productsJson": {
+      "checked": false,
+      "allowed": null,
+      "status": null,
+      "productCount": null,
+      "note": null
+    },
+    "verdict": "blocked — could not read robots.txt",
+    "notes": [
+      "robots.txt returned 403. Treated as \"do not fetch\"."
+    ]
+  },
+  {
+    "name": "NoFeed",
+    "domain": "nofeed.test",
+    "region": null,
+    "permission_status": "not_asked",
+    "robots": {
+      "fetched": true,
+      "status": 200,
+      "crawlDelay": null,
+      "rules": {
+        "/": "allowed",
+        "/products.json": "allowed",
+        "/collections/all": "allowed",
+        "/wp-json/": "allowed"
+      }
+    },
+    "platform": "unknown",
+    "productsJson": {
+      "checked": true,
+      "allowed": true,
+      "status": 200,
+      "productCount": null,
+      "note": "not JSON — feed not available"
+    },
+    "verdict": "manual-only — no public feed found",
+    "notes": []
+  },
+  {
+    "name": "Limited",
+    "domain": "limited.test",
+    "region": null,
+    "permission_status": "not_asked",
+    "robots": {
+      "fetched": true,
+      "status": 200,
+      "crawlDelay": null,
+      "rules": {
+        "/": "allowed",
+        "/products.json": "allowed",
+        "/collections/all": "allowed",
+        "/wp-json/": "allowed"
+      }
+    },
+    "platform": "unknown",
+    "productsJson": {
+      "checked": true,
+      "allowed": true,
+      "status": 429,
+      "productCount": null,
+      "note": null
+    },
+    "verdict": "rate limited — backed off",
+    "notes": [
+      "429 on /products.json (Retry-After: 60). Stopped."
+    ]
+  },
+  {
+    "name": "Declined",
+    "domain": "declined.test",
+    "region": null,
+    "permission_status": "declined",
+    "robots": {
+      "fetched": false,
+      "status": null,
+      "crawlDelay": null,
+      "rules": {}
+    },
+    "platform": "unknown",
+    "productsJson": {
+      "checked": false,
+      "allowed": null,
+      "status": null,
+      "productCount": null,
+      "note": null
+    },
+    "verdict": "skipped — permission declined",
+    "notes": [
+      "Honoured permanently. Not contacted."
+    ]
+  }
+]

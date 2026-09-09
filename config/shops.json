@@ -1,0 +1,322 @@
+{
+ "_comment": [
+  "Candidate shops for scripts/discover.mjs to probe.",
+  "",
+  "SECONDHAND ONLY. A retail boutique's full price for a current-season piece",
+  "is not a comp for a fifteen-year-old archive jacket — it is a ceiling nobody",
+  "pays on the resale market, and pooled into a comp set it drags every resale",
+  "estimate upward, inventing margin that is not there. Retail sites are",
+  "therefore not listed here, and anything added as kind:retail is excluded",
+  "from comps by src/lib/scoring.mjs regardless.",
+  "",
+  "What belongs here: archive dealers, Japanese secondhand chains, and",
+  "one-person resellers — the places a piece can actually be bought under its",
+  "resale value.",
+  "",
+  "These are CANDIDATES, not a verified list. Discovery probes each and adds",
+  "only those answering with a public feed robots.txt allows, carrying",
+  "something from the roster. A dead or moved domain costs one request and one",
+  "skip line naming why.",
+  "",
+  "Currency is read from the shop itself and never inferred from the country.",
+  "",
+  "Every entry here is a GUESS at a domain until discovery probes it. Nothing is verified by being in this file: a name that has moved, closed or never existed costs one request and prints one skip line saying why. Adding a plausible candidate is therefore cheap and safe; asserting one works is not.",
+  "Add one you know of:  npm run add-source -- --domain shop.example --currency EUR"
+ ],
+ "shops": [
+  {
+   "name": "Archive Store",
+   "domain": "archivestore-official-ec.myshopify.com",
+   "region": "EU",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "myshopify.com domain — Shopify near-certain"
+  },
+  {
+   "name": "DRIEW Garments",
+   "domain": "driewgarments.com",
+   "region": "EU",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "/collections/ path — Shopify likely"
+  },
+  {
+   "name": "Elegantly Papered",
+   "domain": "elegantlypapered.com",
+   "region": "EU",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "/collections/ path — Shopify likely"
+  },
+  {
+   "name": "Life Shop",
+   "domain": "life-shop.jp",
+   "region": "JP",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "/collections/ path — best Japanese Shopify candidate"
+  },
+  {
+   "name": "Dot Comme",
+   "domain": "dotcomme.net",
+   "region": "AU",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "platform unknown"
+  },
+  {
+   "name": "L'Obscur",
+   "domain": "lobscur.com",
+   "region": "EU",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "platform unknown"
+  },
+  {
+   "name": "Gaijin Paris",
+   "domain": "gaijinparis.com",
+   "region": "EU",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "platform unknown"
+  },
+  {
+   "name": "RAGTAG",
+   "domain": "ragtag.jp",
+   "region": "JP",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "large chain — custom platform likely"
+  },
+  {
+   "name": "KOMEHYO",
+   "domain": "komehyo.jp",
+   "region": "JP",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "largest JP reuse chain — custom platform likely"
+  },
+  {
+   "name": "JAM Trading",
+   "domain": "jamtrading.jp",
+   "region": "JP",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "platform unknown"
+  },
+  {
+   "name": "Vector Park",
+   "domain": "vector-park.jp",
+   "region": "JP",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "platform unknown"
+  },
+  {
+   "name": "Treasure Factory",
+   "domain": "trefac.jp",
+   "region": "JP",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "platform unknown"
+  },
+  {
+   "name": "2nd Street",
+   "domain": "2ndstreet.jp",
+   "region": "JP",
+   "kind": "secondhand",
+   "permission_status": "not_asked"
+  },
+  {
+   "name": "Kindal",
+   "domain": "kindal.jp",
+   "region": "JP",
+   "kind": "secondhand",
+   "permission_status": "not_asked"
+  },
+  {
+   "name": "Closet Child",
+   "domain": "closetchild.com",
+   "region": "JP",
+   "kind": "secondhand",
+   "permission_status": "not_asked"
+  },
+  {
+   "name": "Eco Ring",
+   "domain": "ecoring.co.jp",
+   "region": "JP",
+   "kind": "secondhand",
+   "permission_status": "not_asked"
+  },
+  {
+   "name": "Endyma",
+   "domain": "endyma.com",
+   "region": "EU",
+   "kind": "secondhand",
+   "permission_status": "not_asked"
+  },
+  {
+   "name": "Re-See",
+   "domain": "resee.com",
+   "region": "EU",
+   "kind": "secondhand",
+   "permission_status": "not_asked"
+  },
+  {
+   "name": "Archive PDX",
+   "domain": "archivepdx.com",
+   "region": "US",
+   "kind": "secondhand",
+   "permission_status": "not_asked"
+  },
+  {
+   "name": "Middleman Store",
+   "domain": "middleman-store.com",
+   "region": "EU",
+   "kind": "secondhand",
+   "permission_status": "not_asked"
+  },
+  {
+   "name": "Silver League",
+   "domain": "silverleague.co.uk",
+   "region": "UK",
+   "kind": "secondhand",
+   "permission_status": "not_asked"
+  },
+  {
+   "name": "Vintage Sekai",
+   "domain": "vintagesekai.com",
+   "region": "JP",
+   "kind": "secondhand",
+   "permission_status": "not_asked"
+  },
+  {
+   "name": "Jubilee Archive",
+   "domain": "jubileearchive.com",
+   "region": "UK",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "archive dealer — you named this one — candidate; discovery confirms or skips it"
+  },
+  {
+   "name": "Byronesque",
+   "domain": "byronesque.com",
+   "region": "EU",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "archive fashion dealer, vintage designer only — candidate; discovery confirms or skips it"
+  },
+  {
+   "name": "Archive Reloaded",
+   "domain": "archivereloaded.com",
+   "region": "EU",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "Berlin archive dealer — candidate; discovery confirms or skips it"
+  },
+  {
+   "name": "Hunting Season Archive",
+   "domain": "huntingseasonarchive.com",
+   "region": "EU",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "small archive dealer — candidate; discovery confirms or skips it"
+  },
+  {
+   "name": "Sworn Archive",
+   "domain": "swornarchive.com",
+   "region": "UK",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "small archive dealer — candidate; discovery confirms or skips it"
+  },
+  {
+   "name": "Void Berlin",
+   "domain": "void-berlin.com",
+   "region": "EU",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "archive and secondhand, avant-garde roster — candidate; discovery confirms or skips it"
+  },
+  {
+   "name": "Sartoria Vico Archive",
+   "domain": "vicoarchive.com",
+   "region": "EU",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "small archive dealer — candidate; discovery confirms or skips it"
+  },
+  {
+   "name": "Fragment Archive",
+   "domain": "fragmentarchive.com",
+   "region": "US",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "small archive dealer — candidate; discovery confirms or skips it"
+  },
+  {
+   "name": "Cerqua Archive",
+   "domain": "cerquaarchive.com",
+   "region": "EU",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "small archive dealer — candidate; discovery confirms or skips it"
+  },
+  {
+   "name": "Fifth Avenue Vintage",
+   "domain": "fifthavenuevintage.com",
+   "region": "US",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "secondhand designer — candidate; discovery confirms or skips it"
+  },
+  {
+   "name": "Amore Vintage Tokyo",
+   "domain": "amorevintagetokyo.com",
+   "region": "JP",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "Tokyo secondhand designer — candidate; discovery confirms or skips it"
+  },
+  {
+   "name": "Kinji Harajuku",
+   "domain": "kinji.jp",
+   "region": "JP",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "Japanese secondhand chain — candidate; discovery confirms or skips it"
+  },
+  {
+   "name": "Jumble Store",
+   "domain": "jumble-store.com",
+   "region": "JP",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "Japanese secondhand chain — candidate; discovery confirms or skips it"
+  },
+  {
+   "name": "Modescape",
+   "domain": "modescape.com",
+   "region": "JP",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "Japanese secondhand designer dealer — candidate; discovery confirms or skips it"
+  },
+  {
+   "name": "Archive Sixty",
+   "domain": "archivesixty.com",
+   "region": "UK",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "small archive dealer — candidate; discovery confirms or skips it"
+  },
+  {
+   "name": "Doors Archive",
+   "domain": "doorsarchive.com",
+   "region": "EU",
+   "kind": "secondhand",
+   "permission_status": "not_asked",
+   "note": "small archive dealer — candidate; discovery confirms or skips it"
+  }
+ ]
+}

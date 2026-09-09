@@ -1,0 +1,18 @@
+node_modules/
+.next/
+.env.local
+*.tsbuildinfo
+next-env.d.ts
+tmp/
+
+# Runtimes the launcher provisions for itself. Both are disposable:
+# deleting them makes the next launch rebuild them.
+.runtime/
+.pgdata/
+.pgdata.log
+
+# Scratch scripts from browser and endpoint checks. One of these was committed
+# by a `git add -A` after a timed-out command skipped its own cleanup, carrying
+# an absolute path from the machine it ran on into the repo.
+*.tmp.mjs
+*.tmp.js
