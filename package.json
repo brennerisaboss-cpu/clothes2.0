@@ -13,6 +13,7 @@
     "test": "node --test test/*.test.mjs",
     "probe-shops": "node --env-file-if-exists=.env.local scripts/probe-shops.mjs",
     "poll": "node --env-file-if-exists=.env.local scripts/poll.mjs",
+    "match": "node --env-file-if-exists=.env.local scripts/match.mjs",
     "test:integration": "node --env-file-if-exists=.env.local --test test/*.integration.mjs",
     "alert": "node --env-file-if-exists=.env.local scripts/alert.mjs",
     "fx": "node --env-file-if-exists=.env.local scripts/fx.mjs",

@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import {
   scoringCandidates, observationsForItems, listRoutes, calibrationRatios, pipelineCensus,
-  marketSpans,
+  marketSpans, SCORING_CANDIDATE_LIMIT,
 } from '@/lib/queries';
 import { firstBlocker, showAsks } from '@/lib/diagnose.mjs';
 import {
@@ -135,6 +135,14 @@ export default async function OpportunitiesPage({
   const flaggedCount = withScore.filter((s) => isFlagged(s.best)).length;
   const provisionalCount = withScore.filter((s) => s.best.provisional).length;
 
+  // Was this ranking computed over everything, or over a slice of it?
+  //
+  // Candidates come back newest first under a cap, so once a catalogue outgrows
+  // the cap the best opportunity in the database can be absent from the screen
+  // whose job is to name it — and a ranked list gives no sign that it was cut.
+  // The census counts what the cap could not reach, so the page can say so.
+  const unranked = census ? Math.max(0, census.acquisitionActive - candidates.length) : 0;
+
   return (
     <div className="space-y-6">
       <div>
@@ -210,6 +218,17 @@ export default async function OpportunitiesPage({
           </Link>
         </span>
       </div>
+
+      {unranked > 0 ? (
+        <p className="border-l-2 border-accent pl-3 text-[13px] leading-snug">
+          <span className="font-semibold uppercase tracking-wide text-accent">
+            Ranked over {candidates.length} of {census!.acquisitionActive}
+          </span>{' '}
+          buyable listings — the {unranked} least recently seen were not scored, so a
+          better one may be among them. Narrow the grid by source or sub-line, or raise{' '}
+          <code className="font-mono">SCORING_CANDIDATE_LIMIT</code> ({SCORING_CANDIDATE_LIMIT}).
+        </p>
+      ) : null}
 
       {withScore.length === 0 ? (
         /* The empty state used to guess, and it guessed the same thing every

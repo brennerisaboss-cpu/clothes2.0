@@ -144,8 +144,13 @@ export function scoreMatch(listing, item) {
   };
 
   const garment = listing.garment ?? describeGarment(listing.title_raw ?? '');
+  // The era as the brand resolver read it, rather than a second AD-only regex
+  // living here. Two readers of the same title disagreeing about the year is a
+  // refusal produced by this file rather than by the listing: a piece stating
+  // "AW03" had no year here and 2003 there, so it was proposed against items it
+  // demonstrably contradicts and refused against the one it belongs to.
   const listingYear =
-    listing.listingYear ?? /\bad\s?(\d{4})\b/i.exec(listing.title_raw ?? '')?.[1] ?? null;
+    listing.listingYear ?? (resolved.adYear != null ? String(resolved.adYear) : null);
 
   const agreements = [];
   const assumptions = [];
@@ -213,7 +218,7 @@ export function suggestMatches(listing, items, { limit = 3 } = {}) {
     ...listing,
     resolved,
     garment: describeGarment(listing.title_raw ?? ''),
-    listingYear: /\bad\s?(\d{4})\b/i.exec(listing.title_raw ?? '')?.[1] ?? null,
+    listingYear: resolved.adYear != null ? String(resolved.adYear) : null,
     tokens: meaningfulTokens(listing.title_raw, resolved.matchedAlias),
   };
   return (items ?? [])
@@ -249,7 +254,7 @@ export function factsOf(listing) {
   return {
     brandId: listing.brand_id ?? resolved.brandId ?? null,
     sublineId: listing.subline_id ?? resolved.sublineId ?? null,
-    adYear: /\bad\s?(\d{4})\b/i.exec(listing.title_raw ?? '')?.[1] ?? null,
+    adYear: resolved.adYear != null ? String(resolved.adYear) : null,
     type: garment.type,
     material: garment.material,
     model: garment.model,

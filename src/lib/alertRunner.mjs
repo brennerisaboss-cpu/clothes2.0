@@ -55,9 +55,20 @@ function toEmbed(listing, score) {
 /**
  * Run every enabled rule over the current candidates.
  *
- * @param {object} opts { client, candidates, observations, routes, fetchImpl, now }
+ * `calibration` is not optional in spirit, only in signature. An alert that
+ * omits it pushes a different number from the one the screen shows for the same
+ * listing — the correction measured from real sales is applied on
+ * /opportunities and was not applied here — and of the two, the notification is
+ * the one read as "act on this now". Callers pass the same map the page reads;
+ * an empty one simply corrects nothing, which is what a fresh install does
+ * anyway.
+ *
+ * @param {object} opts { client, candidates, observations, routes, calibration,
+ *                        fetchImpl, now }
  */
-export async function runAlerts({ client, candidates, observations, routes, fetchImpl, sleep }) {
+export async function runAlerts({
+  client, candidates, observations, routes, calibration = null, fetchImpl, sleep,
+}) {
   const { rows: rules } = await client.query(
     `select * from alert_rules where enabled order by id`,
   );
@@ -70,6 +81,8 @@ export async function runAlerts({ client, candidates, observations, routes, fetc
       listing,
       observations: observations.get(listing.item_id) ?? [],
       routes,
+      calibration,
+      brandId: listing.brand_id ?? null,
     }).best,
   }));
 

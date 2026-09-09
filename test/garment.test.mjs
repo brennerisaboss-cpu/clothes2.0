@@ -142,3 +142,122 @@ test('an unstated model sits behind the stated ones, so it can pool coarser', ()
   const key = planMatch({ title_raw: 'M.A+ accordion bag leather' }).key;
   assert.match(key, /\|\?$/);
 });
+
+// ---------------------------------------------------------------------------
+// Season codes: the era, never the model
+// ---------------------------------------------------------------------------
+
+test('a season code is not a model', () => {
+  // "02AW" and "AW03" mix letters and digits exactly as a model code does, so
+  // they were read as one — and model is the finest segment of the identity
+  // key, so every listing that named its season pooled with nothing at all.
+  assert.equal(modelCode('Undercover AW03 Scab wool knit sweater'), null);
+  assert.equal(modelCode('CDG HOMME PLUS 02AW wool jacket'), null);
+  assert.equal(modelCode('Yohji Yamamoto SS19 wool coat'), null);
+  assert.equal(modelCode('Rick Owens FW18 leather jacket'), null);
+  assert.equal(modelCode('Rick Owens FW2018 leather jacket'), null);
+});
+
+test('a size quoted with its sizing system is not a model', () => {
+  // "EU48" is the same size as "48". Reading the prefixed form as a model split
+  // one garment into one item per country its sellers happened to size it in.
+  assert.equal(modelCode('Yohji Yamamoto wool jacket EU48'), null);
+  assert.equal(modelCode('CDG wool jacket IT50'), null);
+  assert.equal(modelCode('Rick Owens leather jacket US32'), null);
+});
+
+test('a real model code survives every exclusion', () => {
+  assert.equal(modelCode('Guidi 788Z horse leather derby'), '788Z');
+  assert.equal(modelCode('Guidi PL1 front zip boot'), 'PL1');
+  assert.equal(modelCode('M.A+ B7 leather accordion bag'), 'B7');
+});
+
+test("the README's three wordings of one jacket are one item", () => {
+  // The worked example the whole platform is explained by. The Japanese one
+  // states its era as a season rather than an AD tag, and used to key as model
+  // "02AW" with an unknown year — a second item, with a comp set of one.
+  const keys = [
+    'Comme des Garcons Homme Plus AD2002 wool tailored jacket',
+    'CDG HOMME PLUS 02AW ウール テーラード ジャケット',
+    'comme des garcons homme plus ad2002 wool jacket',
+  ].map((t) => planMatch({ title_raw: t }).key);
+
+  assert.equal(new Set(keys).size, 1, `expected one identity, got ${JSON.stringify(keys)}`);
+  assert.equal(keys[0], 'cdg-homme-plus|ad2002|jacket|wool|?');
+});
+
+test('a season separates two pieces the AD tag never could', () => {
+  // Nothing outside Comme des Garçons carries an AD tag, so every Yohji piece
+  // keyed as year-unknown and twenty-one years of production shared one comp
+  // set. The season code is the era, written the way this market writes it.
+  const ss19 = planMatch({ title_raw: 'Yohji Yamamoto Pour Homme SS19 wool coat' }).key;
+  const aw03 = planMatch({ title_raw: 'Yohji Yamamoto Pour Homme AW03 wool coat' }).key;
+  const silent = planMatch({ title_raw: 'Yohji Yamamoto Pour Homme wool coat' }).key;
+
+  assert.notEqual(ss19, aw03);
+  // A listing that never states an era keeps its own bucket rather than being
+  // assigned to either — and pools one level coarser through comps.mjs.
+  assert.match(silent, /\|ad\?\|/);
+});
+
+test('the two halves of one year are one era, as the AD tag already was', () => {
+  // AD2002 spans SS02 and AW02, so folding a season into it changes nothing
+  // about how coarse the bucket is.
+  const ss = planMatch({ title_raw: 'Undercover SS03 wool knit' }).key;
+  const aw = planMatch({ title_raw: 'Undercover AW03 wool knit' }).key;
+  assert.equal(ss, aw);
+});
+
+// ---------------------------------------------------------------------------
+// Garment vocabulary
+// ---------------------------------------------------------------------------
+
+test('パーカー is a hoodie, not a coat', () => {
+  // The Japanese word for a hoodie, which the coat family used to claim by way
+  // of the English "parka" — pooling every Japanese hoodie in every feed with
+  // overcoats, and letting a €90 piece vote on a €900 median.
+  assert.equal(describeGarment('COMME des GARCONS HOMME PLUS パーカー ブラック').type, 'hoodie');
+  assert.equal(describeGarment('Yohji フーディ コットン').type, 'hoodie');
+  // The English parka genuinely is a coat, and stays one.
+  assert.equal(describeGarment('Undercover hooded parka nylon').type, 'coat');
+});
+
+test('a sweatshirt is never pooled with a shirt', () => {
+  // The compact form drops spaces, so "sweatshirt" contains "shirt" — the same
+  // hazard that put tees among button-ups.
+  assert.equal(describeGarment('Rick Owens DRKSHDW cotton sweatshirt').type, 'sweatshirt');
+  assert.equal(describeGarment('CDG crewneck sweatshirt').type, 'sweatshirt');
+  assert.equal(describeGarment('CDG cotton shirt').type, 'shirt');
+  // And a hooded sweatshirt is a hoodie, which is a different market again.
+  assert.equal(describeGarment('11 by BBS hooded sweatshirt').type, 'hoodie');
+});
+
+test('an accessory never claims the garment it is attached to', () => {
+  // "belted coat" compacts to "beltedcoat", which contains "belt". Accessories
+  // sit last so every family that could own the piece has already had its turn.
+  assert.equal(describeGarment('Yohji Yamamoto belted wool coat').type, 'coat');
+  assert.equal(describeGarment('Guidi leather belt').type, 'belt');
+});
+
+test('a kimono sleeve is a sleeve, not a kimono', () => {
+  assert.equal(describeGarment('Yohji kimono sleeve wool jacket').type, 'jacket');
+  assert.equal(describeGarment('Kapital haori indigo').type, 'kimono');
+});
+
+test('a biker is a jacket and a turtleneck is a knit', () => {
+  assert.equal(describeGarment('Rick Owens cropped leather biker').type, 'jacket');
+  assert.equal(describeGarment('Yohji ライダース レザー').type, 'jacket');
+  assert.equal(describeGarment('ISSEY MIYAKE MEN wool turtleneck').type, 'knit');
+  assert.equal(describeGarment('Yohji wool pullover').type, 'knit');
+});
+
+test('the fibre that carries the price wins over the one beside it', () => {
+  // A title naming mohair is naming the fibre the resale value rests on, and it
+  // is routinely written next to the word "wool".
+  assert.equal(describeGarment('CDG mohair wool cardigan').material, 'mohair');
+  assert.equal(describeGarment('Yohji shearling leather coat').material, 'shearling');
+  assert.equal(describeGarment('Kapital corduroy trousers').material, 'corduroy');
+  assert.equal(describeGarment('Rick Owens gore-tex parka').material, 'goretex');
+  // And a plain one still resolves plainly.
+  assert.equal(describeGarment('Yohji wool gabardine coat').material, 'wool');
+});

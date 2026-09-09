@@ -71,3 +71,30 @@ export const VISIBLE_ITEMS_CTE = `
        )
   )
 `;
+
+/**
+ * A comp is a PIECE, not a snapshot of one.
+ *
+ * `listings` is an append-only log: a re-price inserts a new row pointing at
+ * the one it supersedes, so the table holds every price a listing has ever
+ * worn. That makes the table the wrong thing to count. One jacket whose seller
+ * cut its price twice is three rows, and counting them let a single garment on
+ * a single venue satisfy the three-comp minimum by itself — reported as a
+ * settled estimate, with a confidence figure whose volume factor had counted
+ * the same jacket three times, at a median resting on a price the seller had
+ * already abandoned.
+ *
+ * Only the head of each chain is a comp: the piece as it stands now, at its
+ * current price, carrying whatever evidence it ended with — including the
+ * disappearance, which `planAbsences` writes to the head row. The superseded
+ * rows are not discarded. They are the price history, and the item page still
+ * shows every one of them, which is the screen where a sequence of prices means
+ * something.
+ *
+ * Exported as SQL rather than restated at each call site because there are
+ * three of them — the dashboard, the alert script and the cron endpoint — and
+ * they had already drifted apart once. `l` is the listings alias.
+ */
+export const HEAD_OF_CHAIN = `
+  not exists (select 1 from listings sup where sup.supersedes_id = l.id)
+`;

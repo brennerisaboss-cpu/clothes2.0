@@ -6,7 +6,7 @@
 // assignment to mainline. Pooling a Homme Plus piece into mainline comps is
 // exactly the failure mode the brief calls out.
 
-import { normalizeAlias, parseAdYear } from './normalize.mjs';
+import { normalizeAlias, parseEraYear } from './normalize.mjs';
 import { ALIASES, sublineById } from './brands/index.mjs';
 
 // Aliases at or below this length are too collision-prone to match as a bare
@@ -76,10 +76,17 @@ function occurs(entry, haystack) {
  *   matchedAlias: string|null,
  *   adYear: number|null,
  *   adYearStatus: string,
+ *   adYearBasis: 'ad_tag'|'season'|null,
+ *   seasonCode: string|null,
  * }}
  */
 export function resolveBrand(text) {
-  const { adYear, status: adYearStatus } = parseAdYear(text ?? '');
+  // The era, from whichever of the two ways a title states it. An AD tag is
+  // read off the garment; a season code is what the rest of the roster's
+  // sellers write instead, and without it every Yohji, Rick Owens and
+  // Undercover piece keyed as the same unknown year and pooled across decades.
+  const { year: adYear, status: adYearStatus, basis: adYearBasis, seasonCode } =
+    parseEraYear(text ?? '');
   const base = {
     brandId: null,
     sublineId: null,
@@ -89,6 +96,10 @@ export function resolveBrand(text) {
     matchedAlias: null,
     adYear,
     adYearStatus,
+    // Which fact the year came from, so a figure resting on a season code can
+    // be told apart from one resting on the tag itself.
+    adYearBasis,
+    seasonCode,
   };
 
   if (!text || !text.trim()) {

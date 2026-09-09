@@ -8,7 +8,7 @@ import { resolveBrand } from '@/lib/resolve.mjs';
 import { prefillFromUrl } from '@/lib/urlPrefill.mjs';
 import { parseBulk } from '@/lib/bulkPaste.mjs';
 import type { PastedLink } from '@/lib/bulkPaste.mjs';
-import { planMatch } from '@/lib/matching.mjs';
+import { runMatching as matchUnmatched } from '@/lib/matchRunner.mjs';
 import { suggestMatches, safeToApply, clusterListings, admissibleLinks } from '@/lib/matchmaker.mjs';
 import { describeGarment, garmentKey, garmentName } from '@/lib/garment.mjs';
 import { requireUnlocked } from '@/lib/session';
@@ -373,63 +373,23 @@ async function brandForSubline(client: PoolClient, sublineId: string) {
  *
  * Only matches what the alias table can prove. Anything ambiguous stays
  * unmatched and visible in /unresolved rather than being merged on a guess.
+ *
+ * The loop itself lives in `matchRunner.mjs` so `npm run match` runs the same
+ * code rather than a second implementation of it — matching is a pipeline stage
+ * and a pipeline stage that only exists behind a button cannot be scheduled.
  */
 export async function runMatching() {
   await requireUnlocked();
-  const unmatched = await query<{
-    id: string;
-    brand_raw: string | null;
-    title_raw: string;
-  }>(`select id, brand_raw, title_raw from listings where item_id is null`);
 
   const client = await pool.connect();
-  let matched = 0;
-  const skipped: { title: string; reason: string }[] = [];
-
   try {
-    for (const row of unmatched) {
-      const plan = planMatch(row);
-      // planMatch lives in plain JS, so narrow explicitly rather than relying
-      // on a discriminated union TypeScript cannot see.
-      if (!plan.matchable || !plan.sublineId) {
-        skipped.push({ title: row.title_raw, reason: plan.reason });
-        continue;
-      }
-      const sublineId: string = plan.sublineId;
-      const adYear: number | null = plan.adYear ?? null;
-      const adYearStatus: string = plan.adYearStatus ?? 'unknown';
-      await client.query('begin');
-      try {
-        const brandId = plan.resolved?.brandId ?? (await brandForSubline(client, sublineId));
-        if (!brandId) throw new Error(`no brand for sub-line ${sublineId}`);
-        const itemId = await findOrCreateItem(client, {
-          brandId,
-          sublineId,
-          adYear,
-          adYearStatus,
-          // The generated name, never the seller's title: an item is what it
-          // is, not what one listing called it.
-          canonicalName: plan.canonicalName ?? row.title_raw,
-          identityKey: plan.key ?? `named:${sublineId}|${adYear ?? 'ad?'}|${row.title_raw.trim().toLowerCase()}`,
-        });
-        await client.query('update listings set item_id = $1 where id = $2', [itemId, row.id]);
-        await client.query('commit');
-        matched++;
-      } catch (err) {
-        await client.query('rollback');
-        skipped.push({
-          title: row.title_raw,
-          reason: err instanceof Error ? err.message : 'match failed',
-        });
-      }
-    }
+    const summary = await matchUnmatched({ client });
+    revalidatePath('/');
+    revalidatePath('/unresolved');
+    return summary;
   } finally {
     client.release();
   }
-
-  revalidatePath('/');
-  revalidatePath('/unresolved');
-  return { considered: unmatched.length, matched, skipped };
 }
 
 /**

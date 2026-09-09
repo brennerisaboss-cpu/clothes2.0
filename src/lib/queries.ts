@@ -1,5 +1,5 @@
 import { query, one } from './db';
-import { VISIBLE_ITEMS_CTE } from './comps.mjs';
+import { VISIBLE_ITEMS_CTE, HEAD_OF_CHAIN } from './comps.mjs';
 
 export type ListingCard = {
   id: string;
@@ -440,6 +440,23 @@ export type Candidate = {
 };
 
 /**
+ * How many candidates one pass will score.
+ *
+ * A cap has to exist — every candidate pulls a comp set and the page holds all
+ * of it in memory — but the old one was 300, and 300 of what mattered as much
+ * as the number. The rows come back newest first, so once a catalogue passed
+ * three hundred buyable pieces the ranking was computed over the three hundred
+ * most recently seen and the best opportunity in the database could be absent
+ * from the screen whose entire job is to name it. Silently: nothing said the
+ * list had been cut.
+ *
+ * So it is high enough that reaching it is unusual, and reaching it is now
+ * something the page can see and say — /opportunities compares this against the
+ * census and prints the shortfall rather than quietly ranking a slice.
+ */
+export const SCORING_CANDIDATE_LIMIT = 2000;
+
+/**
  * Active listings on ACQUISITION sources that are matched to an item.
  *
  * Exit-venue listings are excluded as candidates on purpose: a Grailed listing
@@ -469,7 +486,7 @@ export async function scoringCandidates() {
              and ra.created_at = (select max(created_at) from review_actions r2 where r2.listing_id = l.id)
         )
       order by l.date_seen desc
-      limit 300`,
+      limit ${SCORING_CANDIDATE_LIMIT}`,
   );
 }
 
@@ -488,6 +505,26 @@ export async function scoringCandidates() {
  *
  * The rule itself is in comps.mjs, where the integration test can run the
  * same SQL this does.
+ *
+ * ONE COMP PER PIECE, not one per snapshot.
+ *
+ * `listings` is a snapshot log: a re-price inserts a new row pointing at the
+ * one it supersedes, and the table IS the price history. That makes it the
+ * wrong thing to count. A single jacket whose seller cut its price twice wrote
+ * three rows, and this query returned all three — so one garment on one venue
+ * satisfied the three-comp minimum by itself, was reported as a SETTLED
+ * estimate rather than a provisional one, and carried a confidence figure built
+ * from a volume factor that had counted the same piece three times. The median
+ * it produced sat at the price the seller had already abandoned.
+ *
+ * Nothing about that surfaces as an error. It surfaces as a number, on the
+ * screen the whole platform exists to put numbers on.
+ *
+ * So only the head of each chain is a comp — the piece as it stands now, at its
+ * current price, carrying whatever evidence it ended with. The superseded rows
+ * are not discarded: they are the price history, and `itemObservations` still
+ * returns every one of them for the item page and its chart, which is where a
+ * sequence of prices means something.
  */
 export async function observationsForItems(itemIds: string[]) {
   if (!itemIds.length) return new Map<string, Observation[]>();
@@ -504,7 +541,8 @@ export async function observationsForItems(itemIds: string[]) {
             true as is_head
        from visible v
        join listings l on l.item_id = v.from_item
-       join sources s on s.id = l.source_id`,
+       join sources s on s.id = l.source_id
+      where ${HEAD_OF_CHAIN}`,
     [itemIds],
   );
   const grouped = new Map<string, Observation[]>();
@@ -786,9 +824,13 @@ export async function pipelineCensus() {
        (select count(*) from listings l join sources s on s.id = l.source_id
          where l.status = 'active' and l.item_id is not null
            and s.role in ('acquisition','both'))::int as acquisition_active,
+       -- Head of chain only, exactly as observationsForItems counts them: a
+       -- re-priced listing is one comp, not one per price it has worn.
        (select count(*) from listings l join sources s on s.id = l.source_id
          where l.item_id is not null and s.role in ('exit','both')
-           and s.marketplace_kind <> 'retail')::int as exit_observations,
+           and s.marketplace_kind <> 'retail'
+           and not exists (select 1 from listings sup where sup.supersedes_id = l.id))::int
+         as exit_observations,
        (select count(*) from routes)::int as routes,
        (select count(*) from routes where costs_confirmed_at is not null)::int as routes_confirmed,
        -- A price nothing can compare: price_base is stamped once at insert and
@@ -817,6 +859,26 @@ export async function pipelineCensus() {
  * Deliberately reads the whole log rather than active rows — the departed ones
  * are the entire signal, and the live ones are what stop the estimate being
  * biased toward the pieces that happened to sell.
+ *
+ * ONE SPAN PER PIECE, MEASURED END TO END.
+ *
+ * A re-priced listing is a chain of snapshot rows, and each row carries a
+ * `first_seen_at` of its own — the moment that PRICE reached the market, which
+ * is what pollRunner means by it and is not when the piece did. Reading the log
+ * row by row therefore produced one span per price rather than one per piece,
+ * every extra span short and none of them ever departing. Kaplan-Meier counts a
+ * censored span in the at-risk pool for as long as it was known to survive, so
+ * those short never-departing entries padded the denominator at exactly the
+ * early times where the curve does its steepest work: the estimate came out
+ * flatter than the market, pieces read as lasting longer than they do, and the
+ * urgency band under-stated how fast a venue moves. Taking only the head row
+ * instead would trade that for the opposite error, starting the clock at the
+ * last price cut and reporting a jacket that has sat for five months as days
+ * old.
+ *
+ * So the chain is walked from its root: the span starts where the piece first
+ * appeared, ends at the head's last confirmation, and departs only if the head
+ * departed. That is the duration the piece actually had.
  */
 export async function marketSpans() {
   const rows = await query<{
@@ -826,13 +888,34 @@ export async function marketSpans() {
     last_verified_at: Date | null;
     status: string;
   }>(
-    // first_seen_at is the span's start and a row without one is skipped, so
-    // this filters on it: a null there is a row that predates the column and
-    // whose original sighting was overwritten in place by a re-confirmation.
-    `select source_id, first_seen_at, date_seen, last_verified_at, status::text as status
-       from listings
-      where first_seen_at is not null
-        and first_seen_at > now() - interval '400 days'`,
+    // Forward from the roots, because that is the direction a recursive CTE can
+    // travel: a row nothing supersedes is the first sighting of a piece, and
+    // each step follows supersedes_id to the next price it wore. `started` is
+    // carried down unchanged, so every row in a chain knows when its piece
+    // arrived. The index added in 018 is what makes the walk cheap.
+    //
+    // A row with no first_seen_at predates the column and is skipped rather
+    // than started from date_seen: that yields a floor, and a floor read as a
+    // duration says the piece sold quickly, which is the direction of error
+    // that manufactures urgency. survival.mjs makes the same refusal.
+    `with recursive chain as (
+       select l.id as node, l.first_seen_at as started
+         from listings l
+        where l.supersedes_id is null
+          and l.first_seen_at is not null
+          and l.first_seen_at > now() - interval '400 days'
+       union all
+       select next.id, c.started
+         from chain c
+         join listings next on next.supersedes_id = c.node
+     )
+     select l.source_id, c.started as first_seen_at, l.date_seen,
+            l.last_verified_at, l.status::text as status
+       from chain c
+       join listings l on l.id = c.node
+      where ${HEAD_OF_CHAIN}
+      order by c.started desc
+      limit 20000`,
   );
   const bySource = new Map<string, typeof rows>();
   for (const row of rows) {
