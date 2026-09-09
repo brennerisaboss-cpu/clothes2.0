@@ -153,18 +153,22 @@ export function firstBlocker(c) {
     };
   }
 
-  // Everything worked. The rows exist and are being withheld, which is a
-  // judgement rather than a fault — but an empty screen never said so.
+  // Everything worked, and the rows are being withheld by a filter that is
+  // switched on. Reachable only deliberately now that ask-based rows show by
+  // default — but a screen emptied by your own filter should say so rather than
+  // looking like a screen with nothing in it.
   if (n(c.salesBacked) === 0 && n(c.asksOnly) > 0) {
     return {
       kind: 'asks_only',
       what:
         `${n(c.asksOnly)} scored ${n(c.asksOnly) === 1 ? 'margin rests' : 'margins rest'} on asking prices alone — ` +
-        'what sellers hope for, not what buyers paid. Pasting a live search page can only ever produce asking ' +
-        'prices, so on a paste-driven install this is the normal state rather than a passing one.',
+        'what sellers hope for, not what buyers paid — and the sales-backed filter is hiding them. ' +
+        'Pasting a live search page can only ever produce asking prices, so on a paste-driven install ' +
+        'this is the normal state rather than a passing one.',
       fix:
-        'Show them anyway, marked as ask-based — or add a source that reports ' +
-        'what pieces actually sold for: npm run add-ebay -- --sold',
+        'Show them, marked as ask-based — or record what pieces actually fetched, ' +
+        'which works on any venue: paste a page of SOLD listings on /add, ' +
+        'npm run record-sale -- --item <uuid>, or npm run add-ebay -- --sold',
       href: '/opportunities?asks=1',
     };
   }
@@ -173,15 +177,37 @@ export function firstBlocker(c) {
 }
 
 /**
- * Should the page fall back to ask-based rows?
+ * Should the page show ask-based rows?
  *
- * Withholding them is right while there is something better to show. Doing it
- * when there is nothing better — which is every paste-only install, forever —
- * turns the deliberate reticence into a blank screen, and a blank screen is
- * read as broken rather than as cautious. So: the toggle wins if set,
- * otherwise show what there is and label it.
+ * Yes, unless you say otherwise — and that is a reversal.
+ *
+ * It used to hide them whenever a single sales-backed row existed, on the
+ * argument that a margin computed from asking prices is arithmetic on two hopes
+ * and should not sit beside one computed from evidence. The argument is right
+ * about the DISTINCTION and wrong about what to do with it. The two are not
+ * mutually exclusive and never were: an estimate's comp pool already mixes
+ * sales and asks, weighted — a confirmed sale counts for 1, an ask for 0.45 —
+ * so every figure on this screen is a blend and the "basis" is a label for the
+ * strongest evidence present, not a switch between two modes of operating.
+ *
+ * Partitioning the ROWS by that label then does something the weighting was
+ * built to avoid. A piece with no sold comp is not a piece with no information:
+ * it is one whose evidence is thinner, which the confidence figure already says
+ * and the ranking already reflects. Hiding it loses a real opportunity to
+ * protect a distinction that was already visible — and it got worse as sold
+ * data arrived, because a handful of items acquiring sales was enough to hide
+ * every other row on the screen.
+ *
+ * So they are shown, ranked together, each row saying what it rests on. Narrow
+ * to sales-backed rows deliberately, with the toggle, when that is the question
+ * being asked.
  */
-export function showAsks({ requested, salesBacked, asksOnly }) {
-  if (requested) return true;
-  return Number(salesBacked ?? 0) === 0 && Number(asksOnly ?? 0) > 0;
+/**
+ * @param {{requested: boolean|undefined}} opts
+ *   Tri-state, and it has to be: `undefined` is "no opinion", which is now the
+ *   common case and the one that shows them. Collapsing it to a boolean is how
+ *   the absent parameter came to mean the same thing as an explicit no.
+ */
+export function showAsks({ requested }) {
+  return requested !== false;
 }

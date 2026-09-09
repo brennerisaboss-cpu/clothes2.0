@@ -36,8 +36,10 @@ export default async function OpportunitiesPage({
   // worth mistaking for a checked number, so it is held back while there is
   // anything better to show. The decision is in diagnose.mjs: it is a default,
   // not a rule, because on a paste-driven install nothing better ever arrives.
-  const asksRequested = (Array.isArray(sp.asks) ? sp.asks[0] : sp.asks) === '1';
-  const salesOnlyRequested = (Array.isArray(sp.asks) ? sp.asks[0] : sp.asks) === '0';
+  // Tri-state on the wire: '1' show, '0' sales-backed only, absent no opinion.
+  // The absent case is the common one and it shows them — see showAsks.
+  const asksParamRaw = Array.isArray(sp.asks) ? sp.asks[0] : sp.asks;
+  const asksRequested = asksParamRaw === undefined ? undefined : asksParamRaw !== '0';
 
   const [candidates, routes, calibration, census, spanRows] = await Promise.all([
     scoringCandidates(),
@@ -98,9 +100,17 @@ export default async function OpportunitiesPage({
   // is as likely to be the seeded duty rate as the piece.
   const showLosses = (Array.isArray(sp.losses) ? sp.losses[0] : sp.losses) === '1';
 
-  const showAsksOnly = salesOnlyRequested
-    ? false
-    : showAsks({ requested: asksRequested, salesBacked: backedBySales.length, asksOnly: asksOnly.length });
+  // Both, ranked together, each row saying what it rests on.
+  //
+  // The screen used to hide every ask-based row the moment a single
+  // sales-backed one existed, which partitioned the list by a label rather than
+  // ranking by what it means. The comp pool behind each figure already mixes
+  // sales and asks, weighted — a confirmed sale counts for 1, an ask for 0.45 —
+  // so the "basis" is a description of the strongest evidence present, not a
+  // mode. A piece with no sold comp is one whose evidence is thinner, which the
+  // confidence figure already says; dropping it off the screen loses a real
+  // opportunity to protect a distinction that was already visible.
+  const showAsksOnly = showAsks({ requested: asksRequested });
   const visible = showAsksOnly ? allScored : backedBySales;
   const losing = visible.filter((s) => (s.best.profit ?? 0) <= 0);
   const withScore = showLosses ? visible : visible.filter((s) => (s.best.profit ?? 0) > 0);
@@ -119,11 +129,10 @@ export default async function OpportunitiesPage({
       })
     : null;
 
-  // The toggle has three positions on the wire and two on screen: absent means
-  // "decide for me", which is what makes the fallback possible. Turning the
-  // ask-based rows OFF therefore has to say so explicitly — dropping the
-  // parameter would just let the fallback switch them straight back on.
-  const asksParam = showAsksOnly ? '&asks=1' : '&asks=0';
+  // Turning the ask-based rows off has to say so explicitly, because absent
+  // means show them. Turning them back on drops the parameter rather than
+  // setting asks=1, so the common state has the clean URL.
+  const asksParam = showAsksOnly ? '' : '&asks=0';
   const lossParam = showLosses ? '&losses=1' : '';
 
   // Same comparator the grid uses, so the two views can never disagree about
@@ -211,9 +220,9 @@ export default async function OpportunitiesPage({
               showAsksOnly ? 'border-b-2 border-accent pb-0.5 font-semibold text-accent' : 'text-muted'
             }`}
           >
-            {showAsksOnly ? 'Sales-backed only' : 'Ask-based'}
-            {!showAsksOnly && asksOnly.length ? (
-              <sup className="ml-0.5 text-[10px]">{asksOnly.length}</sup>
+            {showAsksOnly ? 'Sales-backed only' : 'Showing sales-backed only'}
+            {showAsksOnly && asksOnly.length ? (
+              <sup className="ml-0.5 text-[10px]">{asksOnly.length} ask-based</sup>
             ) : null}
           </Link>
         </span>
@@ -389,8 +398,30 @@ export default async function OpportunitiesPage({
                       </p>
                     );
                   })()}
-                  <p className="mt-1 text-[10px] uppercase tracking-wide text-muted">
-                    data {best.dataAgeDays}d old
+                  {/* What the figure rests on, on every row.
+                      Ask-based rows and sales-backed ones sit in one list now
+                      rather than the first being hidden whenever the second
+                      exists, so the distinction has to be legible at a glance
+                      instead of implied by presence. It is the strongest
+                      evidence in the pool, not a mode: every estimate here
+                      already blends sales and asks, weighted. */}
+                  <p className="mt-1 text-[10px] uppercase tracking-wide">
+                    <span
+                      className={
+                        best.evidenceBasis === 'confirmed_sales'
+                          ? 'font-semibold text-ok'
+                          : best.evidenceBasis === 'disappearances'
+                            ? 'text-fg'
+                            : 'text-muted'
+                      }
+                    >
+                      {best.evidenceBasis === 'confirmed_sales'
+                        ? `${best.confirmedSales} sold`
+                        : best.evidenceBasis === 'disappearances'
+                          ? `${best.disappearances} vanished`
+                          : 'asks only'}
+                    </span>
+                    <span className="text-muted"> · data {best.dataAgeDays}d old</span>
                   </p>
                 </div>
               </li>

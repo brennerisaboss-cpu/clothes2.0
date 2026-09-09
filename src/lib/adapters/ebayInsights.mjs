@@ -1,7 +1,14 @@
 // eBay Marketplace Insights — item_sales/search.
 //
-// The only sanctioned source of SOLD prices this platform can reach, and the
-// thing it has been missing since the beginning.
+// Completed sales, automatically, from the one marketplace that publishes them
+// through an API.
+//
+// It is not the only route to a sold price and should not be described as one.
+// A page of sold listings pasted on /add records them from any venue you can
+// open, and `npm run record-sale --item` records what a piece fetched when you
+// sold it yourself — both need no credentials, no approval and no exception to
+// anybody's terms, and both reach the venues whose terms rule out collecting
+// from them at all. What this adds is that it happens without you.
 //
 // Everything else here reports asking prices. An asking price is what one
 // seller hopes for, so a margin computed from two of them is arithmetic on two

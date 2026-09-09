@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, useTransition } from 'react';
-import { parsePaste, saveDrafts } from '@/app/actions';
+import { parsePaste, saveDrafts, saveSoldDrafts } from '@/app/actions';
 import { walkPastedHtml, shouldTakeOver } from '@/lib/pastedHtml.mjs';
 import { looksLikePastedPage } from '@/lib/pastedPage.mjs';
 import type { PastedLink } from '@/lib/bulkPaste.mjs';
@@ -44,6 +44,20 @@ export default function BulkPaste({
   // BUY, so it could never serve as a comp — which is the entire reason to
   // collect Grailed.
   const [batchSource, setBatchSource] = useState('');
+  // Is this a page of things for sale, or a page of things that sold?
+  //
+  // The single most valuable fact a paste can carry, and one no adapter can
+  // infer. Grailed, Vestiaire and The RealReal all show their sold listings at
+  // the price they went for, and copying that page is the same act as copying a
+  // page of live ones — so this is the route to sold prices that works on every
+  // venue, needs no credentials and no approval, and does not depend on a
+  // marketplace choosing to publish a sales API.
+  //
+  // A per-page question rather than a per-row one: a sold-listings page is
+  // entirely sold listings, and asking twenty times what was true once is how a
+  // form gets ignored.
+  const [sold, setSold] = useState(false);
+  const [soldAt, setSoldAt] = useState('');
   const [pending, startTransition] = useTransition();
 
   // What the clipboard's HTML knew, and the exact text it went with.
@@ -130,27 +144,32 @@ export default function BulkPaste({
   const commit = () =>
     startTransition(async () => {
       const ready = drafts.filter((d) => d.titleRaw && d.price != null && d.currency);
-      const res = await saveDrafts(
-        ready.map((d) => ({
-          title: d.titleRaw,
-          brandRaw: d.brandRaw ?? undefined,
-          sourceId: d.sourceId,
-          sourceItemId: d.sourceItemId ?? undefined,
-          url: d.url ?? undefined,
-          imageUrl: d.imageUrl ?? undefined,
-          price: d.price!,
-          currency: d.currency!,
-          sizeRaw: d.sizeRaw ?? undefined,
-          conditionRaw: d.conditionRaw ?? undefined,
-          sublineId: d.sublineId ?? undefined,
-          adYear: d.adYear ?? undefined,
-        })),
-      );
+      const rows = ready.map((d) => ({
+        title: d.titleRaw,
+        brandRaw: d.brandRaw ?? undefined,
+        sourceId: d.sourceId,
+        sourceItemId: d.sourceItemId ?? undefined,
+        url: d.url ?? undefined,
+        imageUrl: d.imageUrl ?? undefined,
+        price: d.price!,
+        currency: d.currency!,
+        sizeRaw: d.sizeRaw ?? undefined,
+        conditionRaw: d.conditionRaw ?? undefined,
+        sublineId: d.sublineId ?? undefined,
+        adYear: d.adYear ?? undefined,
+      }));
+      // Two actions rather than a flag on one. Recording that pieces SOLD at
+      // prices is the strongest claim this platform stores, so it is not
+      // something a capture token may reach — and saveDrafts is the single
+      // action that token can call.
+      const res = sold
+        ? await saveSoldDrafts(rows, soldAt || undefined)
+        : await saveDrafts(rows);
       const skipped = drafts.length - ready.length;
       setResult(
-        `Saved ${res.saved}.${skipped ? ` ${skipped} skipped for missing price or currency.` : ''}${
-          res.failed.length ? ` ${res.failed.length} failed.` : ''
-        }`,
+        `Saved ${res.saved}${sold ? ' as completed sales' : ''}.${
+          skipped ? ` ${skipped} skipped for missing price or currency.` : ''
+        }${res.failed.length ? ` ${res.failed.length} failed.` : ''}`,
       );
       setDrafts([]);
       setText('');
@@ -188,12 +207,44 @@ export default function BulkPaste({
             ))}
           </select>
         </label>
+        <label className="flex items-center gap-2 text-[12px] uppercase tracking-[0.08em] text-muted">
+          <input
+            type="checkbox"
+            checked={sold}
+            onChange={(e) => setSold(e.target.checked)}
+          />
+          These already sold
+        </label>
+
+        {sold ? (
+          <label className="flex items-center gap-2 text-[12px] uppercase tracking-[0.08em] text-muted">
+            on
+            <input
+              type="date"
+              className="field w-auto py-1 text-[13px] normal-case tracking-normal"
+              value={soldAt}
+              onChange={(e) => setSoldAt(e.target.value)}
+            />
+          </label>
+        ) : null}
+
         <button className="btn" onClick={parse} disabled={pending || !text.trim()}>
           Parse into drafts
         </button>
         {note ? <span className="text-xs text-muted">{note}</span> : null}
         {result ? <span className="text-xs text-ok">{result}</span> : null}
       </div>
+
+      {sold ? (
+        <p className="border-l-2 border-accent pl-3 text-[13px] leading-snug">
+          These will be recorded as{' '}
+          <span className="font-semibold uppercase tracking-wide text-accent">confirmed sales</span> —
+          prices somebody actually paid, which outweigh asking prices in every estimate they
+          enter and lift the items they belong to out of resting on hopes. Only paste a page of
+          SOLD listings here.
+          {soldAt ? null : ' Without a date they are recorded as sold today, which is right for a page you are looking at now and wrong for a sale you are entering from memory.'}
+        </p>
+      ) : null}
 
       {diagnosis && (diagnosis.why || !diagnosis.links) ? (
         <div className="border-l-4 border-warn bg-panel px-4 py-3 text-[13px]">

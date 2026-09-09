@@ -70,8 +70,8 @@ npm run setup:demo                # setup, plus sample listings
 ### Verify
 
 ```bash
-npm test                  # 581 unit tests, no database needed
-npm run test:integration  # 73 tests against a real Postgres (needs DATABASE_URL)
+npm test                  # 586 unit tests, no database needed
+npm run test:integration  # 74 tests against a real Postgres (needs DATABASE_URL)
 npm run typecheck
 npm run verify:live       # real calls to every configured API — see below
 ```
@@ -570,29 +570,57 @@ There are three tiers, and the middle one matters most in practice:
 | disappearance | a piece was taken off the market at that price |
 | asks only | nobody has agreed to this number at all |
 
-For most of this platform's life the top row was reachable only by hand, and
-rightly so: a poll that stops seeing a listing cannot know it sold, and an
-inferred sale is not representable here. **eBay's Marketplace Insights API is
-the exception** — it returns completed sales with a price and a date, which is
-the venue stating the outcome rather than this code inferring it.
+### Where sold prices come from
+
+Not one API. A sale is recordable from any venue, by three routes, and none of
+them needs anybody's permission:
 
 ```bash
+# 1. A page of SOLD listings, from any site you can open.
+#    /add → Paste a page → tick "these already sold".
+#    Grailed, Vestiaire and The RealReal all show sold pieces at the price they
+#    went for, and copying that page is the same act as copying a page of live
+#    ones — the mechanism the whole manual tier already rests on.
+
+# 2. A piece you sold yourself, on any venue.
+npm run record-sale -- --brand cdg --venue grailed --price 700 --item <uuid>
+
+# 3. eBay's completed sales, automatically.
 npm run add-ebay -- --sold
 ```
 
-It is a limited release: the scope is granted per application by eBay, on
-request, separately from Buy API access and from the Application Growth Check.
-Most keysets do not have it, and `--sold` probes for it before saving anything —
-so a keyset without the grant fails at setup, with the reason, rather than
-returning nothing on every poll for a month. Without it, gating on confirmed
-sales alone would still leave `/opportunities` empty. But a piece that vanished
-at a price is not nothing. It might have been withdrawn or reserved, yet across a
+**`--item` is what turns a recorded sale into a comp**, and its absence used to
+be a real hole: a sale went into the calibration table and nowhere else, so the
+platform could hold the sentence "this exact coat fetched €700 on Grailed" and
+still price that coat entirely from what other people were asking for it. With
+it, the sale lands in the pool the median is drawn from.
+
+Route 3 is a limited release — eBay grants the Marketplace Insights scope per
+application, on request, separately from Buy API access and from the Application
+Growth Check. `--sold` probes for it before saving anything, so a keyset without
+the grant fails at setup with the reason rather than returning nothing on every
+poll for a month.
+
+What no route does is infer. A poll that stops seeing a listing cannot know it
+sold, and an inferred sale is not representable here — which is why the middle
+tier exists. A piece that vanished at a price is not nothing. It might have been withdrawn or reserved, yet across a
 pool of comps most of them sold, and that is materially better evidence than an
 asking price.
 
-So the first two show by default, and asks-only sit behind a toggle that says
-how many there are. They are not worthless — for thin archive pieces asks are
-often all there is — but the two must never be mistaken for each other.
+**All three show, ranked together, each row saying what it rests on.** They are
+not two modes and never were: the comp pool behind every figure already mixes
+them, weighted — a confirmed sale counts for 1, a disappearance 0.15, an ask
+0.45 — so the "basis" names the strongest evidence present rather than a way of
+operating. Record one sale on a piece with four live comps and its estimate
+moves; it is not replaced.
+
+Earlier this screen hid every ask-based row the moment one sales-backed row
+existed. That partitions the list by a label instead of ranking by what the
+label means, and it got worse as sold data arrived — a handful of items
+acquiring sales was enough to hide everything else. A piece with no sold comp is
+not a piece with no information; it is one whose evidence is thinner, which the
+confidence figure already says. Narrow to sales-backed rows deliberately, with
+the toggle, when that is the question being asked.
 
 ## An alert never pushes a number nobody agreed to
 
@@ -644,6 +672,7 @@ of it.
 | Rakuten Ichiba | `RAKUTEN_APP_ID` | `{"adapter":"rakuten","currency":"JPY","keyword":"…"}` |
 | eBay Browse (asks) | `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET` | `{"adapter":"ebay","query":"…","marketplaceId":"EBAY_GB"}` |
 | eBay completed sales | the same keys, plus eBay granting the Insights scope | `npm run add-ebay -- --sold` |
+| Sold prices, any venue | — | paste a sold page on `/add`, or `npm run record-sale -- --item <uuid>` |
 | Discord alerts | — | set `webhook_url` on a row in `alert_rules` and switch `channel` from `none` to `discord` |
 | Attention signals | `PROBE_CONTACT` | `npm run heat` |
 
@@ -758,7 +787,9 @@ future code cannot violate them.
   something. No code path completes a transaction.
 - **A disappearance is never a sale.** `listing_status` has no value meaning
   "sold" other than `sold_confirmed`, tied by constraint to
-  `evidence = 'confirmed_sale'`. An inferred sale is not representable.
+  `evidence = 'confirmed_sale'`. An inferred sale is not representable. Only a
+  source that STATES the outcome reaches it — a sold page you read, a sale you
+  made, or eBay's completed-sales API — never a poll concluding it from silence.
 - **A failed, partial or suspiciously shrunken poll changes nothing.** Verified
   by integration tests against a real database.
 - **Comps are never pooled across sub-line or condition tier**, and resale value

@@ -29,8 +29,9 @@ export const ADAPTERS = {
   // Active asks. eBay's Browse API cannot report a sale and says so on every
   // listing it returns.
   ebay,
-  // Completed sales — the only sanctioned source of what somebody actually
-  // paid, and the only adapter permitted to report `confirmed_sale`.
+  // Completed sales. The first adapter to report `confirmed_sale`, not the only
+  // one permitted to: any source that STATES an outcome rather than inferring
+  // one may, and the contract is written for that rather than for eBay.
   ebay_insights: ebayInsights,
   merchant_feed: merchantFeed,
   // The shop with no feed and no key. Reads the results page itself, the way

@@ -29,6 +29,23 @@ export type SaveInput = {
   notes?: string;
   sublineId?: string;
   adYear?: string | number;
+  /**
+   * This is a piece that SOLD at this price, not one being asked for.
+   *
+   * The one thing a person can state that no adapter can infer, and the reason
+   * it is here rather than only behind an API: Grailed, Vestiaire and The
+   * RealReal all show their sold listings with the price they went for, and
+   * copying that page is the same act as copying a page of live ones — the
+   * mechanism the whole manual tier already rests on. It needs no credentials,
+   * no approval and no exception to anybody's terms, and it reaches every venue
+   * rather than the one that happens to publish a sales API.
+   *
+   * `soldAt` dates the sale. Absent, it is today — which is right for a page
+   * you are looking at now and wrong for a sale you are entering from memory,
+   * so the form asks.
+   */
+  sold?: boolean;
+  soldAt?: string;
 };
 
 const SIZE_REGIONS = new Set(['EU', 'US', 'UK', 'JP', 'IT', 'FR', 'ALPHA', 'UNKNOWN']);
@@ -112,13 +129,28 @@ export async function saveListing(input: SaveInput) {
          size_raw, size_region, condition_raw, condition_tier,
          price, currency, price_base, fx_rate_at_snapshot,
          url, image_url, notes,
-         status, evidence, entered_manually, last_verified_at, first_seen_at
+         status, evidence, entered_manually, last_verified_at, date_seen, first_seen_at
        ) values (
          $1,$2,$3,$4,$5,
          $6,$7::size_region,$8,$9::condition_tier,
          $10,$11,$12,$13,
          $14,$15,$16,
-         'active','active_ask',true, now(), now()
+         -- A sale is the one status that means somebody paid, tied to its
+         -- evidence class by a database constraint. Reachable from here because
+         -- a person looking at a sold listing is reading an outcome rather than
+         -- inferring one — which is the same reason a poll may never do it.
+         case when $17::boolean then 'sold_confirmed' else 'active' end::listing_status,
+         case when $17::boolean then 'confirmed_sale' else 'active_ask' end::evidence_class,
+         true, now(),
+         -- Dated when it sold, not when it was typed. A sale six months old
+         -- stamped with today's date would carry full recency weight, which is
+         -- exactly what the weighting exists to prevent.
+         coalesce($18::timestamptz, now()),
+         -- A sold row has no first sighting: it says what a piece fetched and
+         -- never says when it was listed. Inventing one gives it a span running
+         -- from today back to the sale, and the venue reads as one where
+         -- everything sells the instant it appears.
+         case when $17::boolean then null else now() end
        ) returning id`,
       [
         itemId,
@@ -137,6 +169,8 @@ export async function saveListing(input: SaveInput) {
         input.url?.trim() || null,
         input.imageUrl?.trim() || null,
         input.notes?.trim() || null,
+        Boolean(input.sold),
+        input.sold && input.soldAt ? input.soldAt : null,
       ],
     );
 
@@ -248,6 +282,29 @@ export async function prefill(url: string) {
 export async function parsePaste(text: string, links: PastedLink[] = []) {
   await requireUnlocked();
   return parseBulk(text, links, await knownSources());
+}
+
+/**
+ * Commit a whole pasted page as completed sales.
+ *
+ * Separate from `saveDrafts` rather than a flag on it, and the separation is
+ * the point: this writes the strongest evidence class the platform has, so it
+ * is not something a capture token can reach. `saveDrafts` is the one action
+ * that token may call — the bookmarklet, the phone shortcut and the mailbox
+ * poller all end there — and a leaked one must be able to add a listing and
+ * not to assert that pieces sold at prices.
+ */
+export async function saveSoldDrafts(drafts: SaveInput[], soldAt?: string) {
+  await requireUnlocked();
+  const results = [];
+  for (const draft of drafts) {
+    results.push(await saveListing({ ...draft, sold: true, soldAt }));
+  }
+  revalidatePath('/opportunities');
+  return {
+    saved: results.filter((r) => r.ok).length,
+    failed: results.filter((r) => !r.ok).map((r) => (r as { error: string }).error),
+  };
 }
 
 /**

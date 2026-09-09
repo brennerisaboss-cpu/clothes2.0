@@ -86,21 +86,28 @@ test('one sales-backed row is enough for the page to have something to show', ()
   assert.equal(firstBlocker({ ...healthy, scored: 6, salesBacked: 1, asksOnly: 5, profitable: 6 }), null);
 });
 
-// --- the default the paste workflow needs -----------------------------------
+// --- sales and asks are not two modes ---------------------------------------
 //
-// Pasting a live search page can only ever record an asking price. Confirmed
-// sales come from `record-sale` or from a later poll finding a piece gone, and
-// neither happens on a paste-only install. Withholding ask-based rows until
-// evidence arrives therefore withheld them forever, and the screen read as
-// broken rather than as cautious.
+// The screen used to hide every ask-based row the moment one sales-backed row
+// existed, which partitions the list by a label rather than ranking by what the
+// label means. The comp pool behind each figure already MIXES sales and asks,
+// weighted — a confirmed sale counts for 1, an ask for 0.45 — so "basis" names
+// the strongest evidence present rather than switching between two ways of
+// working. A piece with no sold comp is one whose evidence is thinner, which
+// the confidence figure already says.
 
-test('ask-based rows are shown when there is nothing better, and hidden when there is', () => {
-  assert.equal(showAsks({ requested: false, salesBacked: 0, asksOnly: 6 }), true);
-  assert.equal(showAsks({ requested: false, salesBacked: 2, asksOnly: 6 }), false);
-  // Asking for them explicitly still wins in both directions.
-  assert.equal(showAsks({ requested: true, salesBacked: 2, asksOnly: 6 }), true);
-  // And nothing to fall back to is not a reason to claim there is.
-  assert.equal(showAsks({ requested: false, salesBacked: 0, asksOnly: 0 }), false);
+test('ask-based rows show unless they are deliberately filtered out', () => {
+  // No opinion on the wire is the common case, and it shows them. Collapsing it
+  // to a boolean is how an absent parameter came to mean an explicit no.
+  assert.equal(showAsks({ requested: undefined }), true);
+  assert.equal(showAsks({}), true);
+
+  // Asking for them explicitly is the same answer.
+  assert.equal(showAsks({ requested: true }), true);
+
+  // Narrowing to sales-backed rows is a deliberate act, and the only thing that
+  // hides them.
+  assert.equal(showAsks({ requested: false }), false);
 });
 
 // --- a loss is not an opportunity -------------------------------------------

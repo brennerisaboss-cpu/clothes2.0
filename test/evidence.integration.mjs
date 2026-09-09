@@ -138,3 +138,56 @@ test('and it is the evidence the margin rests on', async () => {
   assert.ok(best.profit > 0, `expected a margin, got ${best.profit}`);
   assert.equal(best.resale.comps, 3);
 });
+
+// --- a sale somebody made, as a comp -----------------------------------------
+//
+// `sold_confirmed` is tied to `confirmed_sale` by a database constraint, and
+// for most of this platform's life nothing could reach either: a poll that
+// stops seeing a listing cannot know it sold. Three things can now say it
+// outright — a page of sold listings you read, a sale you made yourself, and
+// eBay's completed-sales API — and they all write this shape, so the shape is
+// what gets held here rather than any one of the three.
+
+test('a sale is representable, and only as itself', async () => {
+  const sold = await client.query(
+    `insert into listings (item_id, source_id, source_item_id, title_raw, price, currency,
+                           price_base, fx_rate_at_snapshot, status, evidence,
+                           entered_manually, last_verified_at, date_seen, first_seen_at)
+     values ($1, $2, 'sale-fixture-1', 'Recorded sale fixture', 700, 'EUR', 700, 1,
+             'sold_confirmed', 'confirmed_sale', true, now(), now() - interval '10 days',
+             -- No first sighting: a sale says what a piece fetched and never
+             -- says when it was listed.
+             null)
+     returning id, status::text as status, evidence::text as evidence`,
+    [itemId, EXIT],
+  );
+  assert.equal(sold.rows[0].status, 'sold_confirmed');
+  assert.equal(sold.rows[0].evidence, 'confirmed_sale');
+
+  // The constraint that makes an inferred sale unrepresentable: the status and
+  // the evidence class cannot disagree in either direction.
+  await assert.rejects(
+    client.query(
+      `insert into listings (item_id, source_id, source_item_id, title_raw, price, currency,
+                             price_base, fx_rate_at_snapshot, status, evidence, entered_manually)
+       values ($1, $2, 'sale-fixture-2', 'Claimed sale', 700, 'EUR', 700, 1,
+               'sold_confirmed', 'active_ask', false)`,
+      [itemId, EXIT],
+    ),
+    /only_confirmed_sales_claim_sales|violates check constraint/,
+    'a row cannot claim to be sold while carrying the evidence of an ask',
+  );
+  await assert.rejects(
+    client.query(
+      `insert into listings (item_id, source_id, source_item_id, title_raw, price, currency,
+                             price_base, fx_rate_at_snapshot, status, evidence, entered_manually)
+       values ($1, $2, 'sale-fixture-3', 'Claimed sale', 700, 'EUR', 700, 1,
+               'delisted', 'confirmed_sale', false)`,
+      [itemId, EXIT],
+    ),
+    /only_confirmed_sales_claim_sales|violates check constraint/,
+    'nor carry the evidence of a sale while claiming merely to be gone',
+  );
+
+  await client.query(`delete from listings where source_item_id like 'sale-fixture-%'`);
+});

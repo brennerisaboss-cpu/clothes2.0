@@ -31,7 +31,6 @@ export type Blocker = {
 export function firstBlocker(census: Partial<Census>): Blocker | null;
 
 export function showAsks(opts: {
-  requested: boolean;
-  salesBacked: number;
-  asksOnly: number;
+  /** Tri-state: undefined is "no opinion", and shows them. */
+  requested?: boolean | undefined;
 }): boolean;

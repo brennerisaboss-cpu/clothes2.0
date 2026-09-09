@@ -225,6 +225,15 @@ const TAKES_ONLY_DATA = [
   'saveListing', 'verifyListing', 'recordReview', 'prefill', 'parsePaste',
   'saveDrafts', 'runMatching', 'candidateItems', 'suggestionsFor', 'clustersFor',
   'watchItemHeat', 'unwatchItemHeat', 'isWatchedForHeat',
+  // Writes the strongest evidence class the platform stores — "these pieces
+  // sold at these prices" — and is still data rather than a claim, because the
+  // distinction this list draws is about EXISTING ROWS. saveSoldDrafts creates
+  // new observations from a page the operator is looking at; there is nothing
+  // in the database for it to check them against, and if there were, the
+  // operator's eyes would still be the better source. What protects it is the
+  // capability gate rather than a precondition: it takes the default capability
+  // and therefore refuses a capture token, which the scope test above pins.
+  'saveSoldDrafts',
 ];
 
 // Arguments assert something about the data that the action must CHECK rather
