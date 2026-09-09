@@ -39,8 +39,13 @@ export function itemKey({ sublineId, adYear, type, material, model }) {
  * the sort of failure that looks like the matcher merely being cautious.
  *
  * So the vendor is added only when it is not already in the title.
+ *
+ * Exported because the matchmaker needs the same answer and was computing a
+ * different one — see its own note. Two readers of one listing disagreeing
+ * about which house it is from is not a difference of opinion, it is one of
+ * them being wrong.
  */
-function haystackFor(brand_raw, title_raw) {
+export function resolutionText(brand_raw, title_raw) {
   const title = String(title_raw ?? '');
   const brand = String(brand_raw ?? '').trim();
   if (!brand) return title;
@@ -48,8 +53,30 @@ function haystackFor(brand_raw, title_raw) {
   return inTitle ? title : `${brand} ${title}`;
 }
 
+/**
+ * What garment a listing is, read from the TITLE first.
+ *
+ * The vendor field is the wrong place to learn what a piece is, and one
+ * sub-line makes that concrete: "Comme des Garçons SHIRT" is a real line whose
+ * NAME contains a garment word. Reading the vendor and the title together — as
+ * this did — meant every piece from that vendor was a shirt. A CDG SHIRT knit
+ * and a CDG SHIRT cardigan both keyed as `shirt`, pooled into one item, and
+ * priced against each other; and nothing about that surfaces as an error,
+ * because a wrong pool produces a plausible number.
+ *
+ * The vendor is still consulted, second, for a title that says nothing at all.
+ * "Comme des Garçons SHIRT" / "cotton striped" reading as a shirt is an
+ * inference from what the line makes, and a defensible one — but only where
+ * the piece itself did not say otherwise, which is the whole difference.
+ */
+export function garmentOf(brand_raw, title_raw) {
+  const fromTitle = describeGarment(String(title_raw ?? ''));
+  if (fromTitle.identified) return fromTitle;
+  return describeGarment(resolutionText(brand_raw, title_raw));
+}
+
 export function planMatch({ brand_raw, title_raw }) {
-  const resolved = resolveBrand(haystackFor(brand_raw, title_raw));
+  const resolved = resolveBrand(resolutionText(brand_raw, title_raw));
 
   if (!resolved.brandId) {
     return { matchable: false, reason: 'brand not recognised', resolved };
@@ -71,7 +98,7 @@ export function planMatch({ brand_raw, title_raw }) {
   // coat valued against trousers. So the type must be recognised too, and a
   // title this vocabulary cannot read goes to /unresolved rather than into a
   // pool it may not belong in.
-  const garment = describeGarment(haystackFor(brand_raw, title_raw));
+  const garment = garmentOf(brand_raw, title_raw);
   if (!garment.identified) {
     return {
       matchable: false,

@@ -24,6 +24,10 @@ import * as yahoo from '../src/lib/adapters/yahooShopping.mjs';
 import { fetchRates, ageInDays } from '../src/lib/adapters/fx.mjs';
 import * as rakuten from '../src/lib/adapters/rakuten.mjs';
 import * as ebay from '../src/lib/adapters/ebay.mjs';
+import * as ebayInsights from '../src/lib/adapters/ebayInsights.mjs';
+import * as page from '../src/lib/adapters/page.mjs';
+import * as merchantFeed from '../src/lib/adapters/merchantFeed.mjs';
+import * as woocommerce from '../src/lib/adapters/woocommerce.mjs';
 import { fetchPageviews } from '../src/lib/adapters/wikipediaPageviews.mjs';
 import { send as sendDiscord } from '../src/lib/notifiers/discord.mjs';
 import { resolveBrand } from '../src/lib/resolve.mjs';
@@ -268,6 +272,119 @@ if (!process.env.EBAY_CLIENT_ID || !process.env.EBAY_CLIENT_SECRET) {
         })),
       });
     }
+  }
+}
+
+// --- 4b. eBay Marketplace Insights (completed sales) --------------------------
+//
+// The check most worth running and least likely to pass. Insights is a limited
+// release with its own scope, granted per application by eBay, so a keyset that
+// works perfectly for Browse can fail entirely here — and the failure is a 403
+// on every call rather than an error at setup. Knowing which of the two you
+// have is the difference between margins resting on what people paid and
+// margins resting on what they hoped for.
+if (!process.env.EBAY_CLIENT_ID || !process.env.EBAY_CLIENT_SECRET) {
+  record('ebay sold', { status: 'skip', detail: 'EBAY_CLIENT_ID / EBAY_CLIENT_SECRET not set' });
+} else {
+  const { value, ms } = await timed(() =>
+    ebayInsights.fetchListings(
+      { query: 'comme des garcons homme plus', maxPages: 1,
+        marketplaceId: process.env.EBAY_MARKETPLACE_ID ?? 'EBAY_GB' },
+      { limiter: limiter(), fetchImpl: shapeSpy('ebay sale', (b) => b?.itemSales?.[0]) },
+    ),
+  );
+  if (!value.ok) {
+    // A refusal here is a fact about the keyset, not a fault in the code, and
+    // it is reported as a skip so it cannot fail a verification run for
+    // something nobody can fix from this side.
+    const gated = /limited release|scope/i.test(value.error);
+    record('ebay sold', {
+      status: gated ? 'skip' : 'fail',
+      detail: value.error,
+      ms,
+    });
+  } else {
+    const dated = value.listings.filter((l) => l.soldAt && Number.isFinite(l.price));
+    record('ebay sold', {
+      status: dated.length ? 'pass' : 'fail',
+      detail: `${value.listings.length} completed sales, ${dated.length} with a usable price and date`,
+      ms,
+      sample: value.listings.slice(0, 3).map((l) => ({
+        id: l.sourceItemId, title: l.title.slice(0, 60), price: l.price,
+        currency: l.currency, soldAt: l.soldAt?.toISOString?.().slice(0, 10),
+      })),
+    });
+  }
+}
+
+// --- 4c. Every configured source, against its own endpoint --------------------
+//
+// The adapters above are checked against a query written here. These are
+// checked against what YOU configured, which is the only thing that says
+// whether this installation collects anything.
+//
+// It matters most for the page adapter, which has no documented API to have
+// been written against: it reads a results page the way copying it reads one,
+// so whether it works is a property of the specific shop rather than of a
+// spec. There is no fixture that can answer that and no way to know from here —
+// only the shop itself can say, and this is where it is asked.
+//
+// Nothing is written and nothing is polled: one request per source, through the
+// adapter, honouring robots.txt and each adapter's own rate limit exactly as a
+// real poll would.
+const CONFIGURED = {
+  page,
+  merchant_feed: merchantFeed,
+  woocommerce,
+};
+
+if (!process.env.DATABASE_URL) {
+  record('configured sources', { status: 'skip', detail: 'DATABASE_URL not set' });
+} else {
+  const pg = (await import('pg')).default;
+  const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  try {
+    await client.connect();
+    const { rows } = await client.query(
+      `select id, display_name, config from sources
+        where tier = 'feed' and automation_allowed and permission_status <> 'declined'
+        order by id`,
+    );
+    const checkable = rows.filter((r) => CONFIGURED[r.config?.adapter]);
+
+    if (!checkable.length) {
+      record('configured sources', {
+        status: 'skip',
+        detail: `${rows.length} feed sources, none on an adapter this can verify without a key`,
+      });
+    }
+
+    for (const source of checkable) {
+      const adapter = CONFIGURED[source.config.adapter];
+      const { value, ms } = await timed(() =>
+        adapter.fetchListings({ ...source.config, userAgent: UA }, { limiter: limiter() }),
+      );
+      const usable = (value.listings ?? []).filter(
+        (l) => l.sourceItemId && Number.isFinite(l.price) && l.currency,
+      );
+      record(`source ${source.id}`, {
+        status: value.ok && usable.length ? 'pass' : value.ok ? 'fail' : 'fail',
+        detail: value.ok
+          ? `${value.listings.length} read, ${usable.length} usable${value.complete ? '' : ' (never complete)'}`
+          : `${value.error}${value.note ? ` — ${value.note}` : ''}`,
+        ms,
+        // Prices, deliberately. A wrong currency does not look like an error,
+        // it looks like a bargain, and reading three real prices is the check
+        // no amount of parsing tests can stand in for.
+        sample: usable.slice(0, 3).map((l) => ({
+          title: String(l.title).slice(0, 60), price: l.price, currency: l.currency,
+        })),
+      });
+    }
+  } catch (err) {
+    record('configured sources', { status: 'skip', detail: `database unreachable: ${err?.message ?? err}` });
+  } finally {
+    await client.end().catch(() => {});
   }
 }
 

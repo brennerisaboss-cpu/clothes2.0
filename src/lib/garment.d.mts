@@ -1,10 +1,13 @@
-export declare function describeGarment(title: string): {
+export type Garment = {
   type: string | null;
   material: string | null;
+  model?: string | null;
   matchedType: string | null;
   matchedMaterial: string | null;
   identified: boolean;
 };
+
+export declare function describeGarment(title: string): Garment;
 
 export declare function garmentKey(input: {
   sublineId: string | null;

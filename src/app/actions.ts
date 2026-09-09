@@ -5,6 +5,7 @@ import { pool, query, one } from '@/lib/db';
 import { itemsForBrands } from '@/lib/queries';
 import { toBase } from '@/lib/fx';
 import { resolveBrand } from '@/lib/resolve.mjs';
+import { resolutionText } from '@/lib/matching.mjs';
 import { prefillFromUrl } from '@/lib/urlPrefill.mjs';
 import { parseBulk } from '@/lib/bulkPaste.mjs';
 import type { PastedLink } from '@/lib/bulkPaste.mjs';
@@ -453,15 +454,29 @@ async function brandForSubline(client: PoolClient, sublineId: string) {
  * The loop itself lives in `matchRunner.mjs` so `npm run match` runs the same
  * code rather than a second implementation of it — matching is a pipeline stage
  * and a pipeline stage that only exists behind a button cannot be scheduled.
+ *
+ * `acceptSafeSuggestions` extends it to the listings the alias table cannot key
+ * at all, and only to the ones the matchmaker scores strong against an existing
+ * item WITH NOTHING ASSUMED — which in practice means the listing states its own
+ * sub-line and agrees with the item on every fact either of them states. That
+ * is the case where the exact matcher would have got there too if the item had
+ * existed when the listing arrived.
+ *
+ * It takes only a boolean, and that is the point of the design: the caller
+ * cannot name a pair. Which links are permissible is re-derived server-side
+ * from the rows as they are now, by the same `safeToApply` test the bulk-accept
+ * button is held to — so this stays a mode the operator turns on rather than a
+ * list they can hand in.
  */
-export async function runMatching() {
+export async function runMatching(acceptSafeSuggestions = false) {
   await requireUnlocked();
 
   const client = await pool.connect();
   try {
-    const summary = await matchUnmatched({ client });
+    const summary = await matchUnmatched({ client, acceptSafeSuggestions });
     revalidatePath('/');
     revalidatePath('/unresolved');
+    revalidatePath('/opportunities');
     return summary;
   } finally {
     client.release();
@@ -553,13 +568,26 @@ export async function resolveListing(
  * assumptions attached. Nothing is linked here.
  */
 export async function suggestionsFor(
-  listings: { id: string; title_raw: string; brand_id?: string | null; subline_id?: string | null }[],
+  listings: {
+    id: string;
+    title_raw: string;
+    /** The house as the source stated it — a feed puts it here, not in the title. */
+    brand_raw?: string | null;
+    brand_id?: string | null;
+    subline_id?: string | null;
+  }[],
 ) {
   await requireUnlocked();
   if (!listings.length) return {};
 
-  const brands = [...new Set(listings.map((l) => l.brand_id ?? resolveBrand(l.title_raw).brandId)
-    .filter((b): b is string => Boolean(b)))];
+  // Resolved from the title AND the vendor field, because the candidate items
+  // are narrowed by house and a house read from the title alone is absent on
+  // every feed row — which narrowed the candidates to nothing.
+  const brands = [...new Set(
+    listings
+      .map((l) => l.brand_id ?? resolveBrand(resolutionText(l.brand_raw, l.title_raw)).brandId)
+      .filter((b): b is string => Boolean(b)),
+  )];
   const items = await itemsForBrands(brands);
 
   const out: Record<string, unknown[]> = {};
@@ -654,7 +682,14 @@ export async function resolveCluster(
  * there is no item on either side yet.
  */
 export async function clustersFor(
-  listings: { id: string; title_raw: string; brand_id?: string | null; subline_id?: string | null }[],
+  listings: {
+    id: string;
+    title_raw: string;
+    /** As above: a feed states the house here rather than in the title. */
+    brand_raw?: string | null;
+    brand_id?: string | null;
+    subline_id?: string | null;
+  }[],
 ) {
   await requireUnlocked();
   return clusterListings(listings);

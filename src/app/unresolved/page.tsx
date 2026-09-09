@@ -24,6 +24,11 @@ export default async function UnresolvedPage() {
     cards.map((c) => ({
       id: c.id,
       title_raw: c.title_raw,
+      // The house as the source stated it, separately from the title. A feed
+      // puts it there rather than in the title, so leaving it out left the
+      // matchmaker unable to see a house at all on exactly the rows this screen
+      // exists for — and its first refusal is that the house is unidentified.
+      brand_raw: c.brand_raw,
       brand_id: c.brand_id ?? null,
       subline_id: c.subline_id,
     })),
@@ -41,6 +46,7 @@ export default async function UnresolvedPage() {
     stranded.map((c) => ({
       id: c.id,
       title_raw: c.title_raw,
+      brand_raw: c.brand_raw,
       brand_id: c.brand_id ?? null,
       subline_id: c.subline_id,
     })),

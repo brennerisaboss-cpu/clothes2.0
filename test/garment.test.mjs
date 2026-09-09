@@ -261,3 +261,30 @@ test('the fibre that carries the price wins over the one beside it', () => {
   // And a plain one still resolves plainly.
   assert.equal(describeGarment('Yohji wool gabardine coat').material, 'wool');
 });
+
+test('a vendor name never decides what the garment is', () => {
+  // "Comme des Garçons SHIRT" is a real sub-line whose NAME contains a garment
+  // word, and a feed puts it in the vendor field. Reading the vendor and the
+  // title together made every piece from that vendor a shirt — a knit and a
+  // cardigan both keyed as `shirt`, pooled into one item, and priced against
+  // each other. Nothing about that surfaces as an error, because a wrong pool
+  // produces a plausible number.
+  const knit = planMatch({ brand_raw: 'Comme des Garcons SHIRT', title_raw: 'wool knit' });
+  const cardigan = planMatch({ brand_raw: 'Comme des Garcons SHIRT', title_raw: 'wool cardigan' });
+  assert.equal(knit.type, 'knit');
+  assert.equal(cardigan.type, 'knit');
+
+  // The vendor is still consulted for a title that says nothing at all: reading
+  // a line called SHIRT as making shirts is an inference from what it makes,
+  // and a defensible one where the piece itself did not say otherwise.
+  const silent = planMatch({ brand_raw: 'Comme des Garcons SHIRT', title_raw: 'cotton striped' });
+  assert.equal(silent.type, 'shirt');
+});
+
+test('the vendor is still read where the title omits the house', () => {
+  // The other half of the same rule: a feed states the house separately, and a
+  // title of "wool gabardine coat" resolves to nothing without it.
+  const p = planMatch({ brand_raw: 'Yohji Yamamoto Pour Homme', title_raw: 'wool gabardine coat' });
+  assert.equal(p.matchable, true);
+  assert.equal(p.key, 'yy-pour-homme|ad?|coat|wool|?');
+});

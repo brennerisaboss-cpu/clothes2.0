@@ -70,7 +70,7 @@ npm run setup:demo                # setup, plus sample listings
 ### Verify
 
 ```bash
-npm test                  # 586 unit tests, no database needed
+npm test                  # 592 unit tests, no database needed
 npm run test:integration  # 74 tests against a real Postgres (needs DATABASE_URL)
 npm run typecheck
 npm run verify:live       # real calls to every configured API — see below
@@ -82,6 +82,14 @@ each endpoint for real, reports what came back, and writes
 API — never values. If an adapter mis-parses a real response, that report shows
 which field it was, without a second round trip. Secrets are redacted in both
 the console output and the file.
+
+It also polls **every source you have configured**, once, through its own
+adapter. That half matters most for the page adapter, which has no documented
+API to have been written against — it reads a results page the way copying it
+reads one, so whether it works is a property of your specific shop rather than
+of a spec, and no fixture can answer it. The report prints three real prices per
+source, because a wrong currency does not look like an error, it looks like a
+bargain.
 
 ### Exchange rates
 
@@ -334,7 +342,14 @@ linked without you, and the assumption is always named — a sub-line decides
 which comp pool a piece joins, and joining the wrong one corrupts both.
 
 Strong proposals can be accepted in bulk, because a suggestion costing one
-click each is a suggestion that goes unused when a paste is a hundred rows.
+click each is a suggestion that goes unused when a paste is a hundred rows. The
+same test drives **accept unassumed matches** on the re-run button, and
+`npm run match -- --accept-safe`: they link only what assumes nothing at all —
+the listing states its own sub-line and agrees with the item on everything
+either of them says, which is the case the exact matcher would have reached
+itself had the item existed when the listing arrived. Anything resting on an
+assumption stays a suggestion however high it scores, and the scheduled matcher
+never sets it: a cron job is not a person.
 
 ### When there is nothing to propose against
 

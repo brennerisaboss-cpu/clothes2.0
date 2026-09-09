@@ -361,3 +361,54 @@ test('one bad pair in a batch does not carry the good ones with it, or vice vers
   assert.deepEqual(allowed.map((a) => a.listingId), ['good']);
   assert.equal(refused.length, 1);
 });
+
+// --- the vendor field counts -------------------------------------------------
+//
+// A feed states the house SEPARATELY from the title — Shopify's vendor, a
+// merchant feed's brand column — so "Comme des Garçons" / "wool tailored
+// jacket" is the ordinary shape of a row, not an odd one. Resolving from the
+// title alone found no house in it at all, and the first refusal in scoreMatch
+// is that the house is not identified on both sides.
+//
+// The consequence was precise and invisible: the single most common reason a
+// listing is unresolved — the house is stated, the LINE is not — produced zero
+// proposals and zero clusters. /unresolved offered nothing on exactly the rows
+// it exists to rescue, and looked merely cautious doing it.
+
+const CDG_ITEM = {
+  id: 'i1',
+  identity_key: 'cdg-homme-plus|ad2002|jacket|wool|?',
+  canonical_name: 'Comme des Garçons Homme Plus AD2002 wool jacket',
+  brand_id: 'cdg',
+  subline_id: 'cdg-homme-plus',
+  ad_year: 2002,
+};
+
+test('a listing whose house is in the vendor field is still proposed against', () => {
+  const listing = { id: 'a', brand_raw: 'Comme des Garcons', title_raw: 'wool tailored jacket' };
+  const matches = suggestMatches(listing, [CDG_ITEM]);
+
+  assert.equal(matches.length, 1);
+  assert.ok(matches[0].agreements.some((a) => a.includes('jacket')));
+  // And the sub-line it would be filed under is still named as an assumption,
+  // because the listing does not state one.
+  assert.ok(matches[0].assumptions.some((a) => a.includes('cdg-homme-plus')));
+});
+
+test('two feed rows of one unnamed piece still group', () => {
+  const groups = clusterListings([
+    { id: 'a', brand_raw: 'Comme des Garcons', title_raw: 'wool tailored jacket' },
+    { id: 'b', brand_raw: 'Comme des Garcons', title_raw: 'wool jacket' },
+  ]);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].members.length, 2);
+});
+
+test('the vendor still cannot make two houses one', () => {
+  // Reading the vendor must not have loosened the refusal it exists to serve.
+  const groups = clusterListings([
+    { id: 'a', brand_raw: 'Comme des Garcons', title_raw: 'wool jacket' },
+    { id: 'b', brand_raw: 'Yohji Yamamoto', title_raw: 'wool jacket' },
+  ]);
+  assert.equal(groups.length, 0, 'a different house is a refusal, not a low score');
+});

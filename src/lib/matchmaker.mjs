@@ -30,8 +30,8 @@
 //
 // Everything else is evidence, and evidence is weighed rather than obeyed.
 
-import { describeGarment } from './garment.mjs';
 import { resolveBrand } from './resolve.mjs';
+import { resolutionText, garmentOf } from './matching.mjs';
 
 /** Words that carry no identity and would otherwise inflate every overlap. */
 const NOISE = new Set([
@@ -123,7 +123,19 @@ export function scoreMatch(listing, item) {
   // Derived once and carried, because the caller compares one listing against
   // every item held for its house: re-reading the same title two thousand
   // times to learn the same four facts is most of what a page load would cost.
-  const resolved = listing.resolved ?? resolveBrand(listing.title_raw ?? '');
+  // The vendor field counts, and leaving it out made this screen blind to the
+  // listings it exists for.
+  //
+  // A feed states the house separately from the title — Shopify's vendor, a
+  // merchant feed's brand column — so "Comme des Garçons" / "wool tailored
+  // jacket" is the ordinary shape of a row. Resolving from the title alone
+  // found no house at all in it, and the first refusal in this function is that
+  // the house is not identified on both sides. So the single most common reason
+  // a listing is unresolved (the house is stated, the LINE is not) produced
+  // zero proposals and zero clusters: /unresolved offered nothing on exactly
+  // the rows it was built to rescue, and looked merely cautious doing it.
+  const resolved =
+    listing.resolved ?? resolveBrand(resolutionText(listing.brand_raw, listing.title_raw));
   const brandId = listing.brand_id ?? resolved.brandId;
   if (!brandId || !item.brand_id) return refuse('the house is not identified on both sides');
   if (brandId !== item.brand_id) return refuse('a different house');
@@ -143,7 +155,7 @@ export function scoreMatch(listing, item) {
     model: keyModel && keyModel !== '?' ? keyModel : null,
   };
 
-  const garment = listing.garment ?? describeGarment(listing.title_raw ?? '');
+  const garment = listing.garment ?? garmentOf(listing.brand_raw, listing.title_raw);
   // The era as the brand resolver read it, rather than a second AD-only regex
   // living here. Two readers of the same title disagreeing about the year is a
   // refusal produced by this file rather than by the listing: a piece stating
@@ -213,12 +225,16 @@ export function scoreMatch(listing, item) {
  * and unpicking it is not.
  */
 export function suggestMatches(listing, items, { limit = 3 } = {}) {
-  const resolved = resolveBrand(listing.title_raw ?? '');
+  const resolved = resolveBrand(resolutionText(listing.brand_raw, listing.title_raw));
   const prepared = {
     ...listing,
     resolved,
-    garment: describeGarment(listing.title_raw ?? ''),
+    garment: garmentOf(listing.brand_raw, listing.title_raw),
     listingYear: resolved.adYear != null ? String(resolved.adYear) : null,
+    // Tokens stay from the TITLE. They are the describing words, and every
+    // listing from one vendor shares that vendor's — folding it in would make
+    // two unrelated pieces from one shop overlap on the shop's name, which is
+    // the same failure the `exclude` argument exists to prevent.
     tokens: meaningfulTokens(listing.title_raw, resolved.matchedAlias),
   };
   return (items ?? [])
@@ -249,8 +265,8 @@ export function safeToApply(match) {
  * which is compatible with anything. A wrong non-null is what has to be caught.
  */
 export function factsOf(listing) {
-  const resolved = resolveBrand(listing.title_raw ?? '');
-  const garment = describeGarment(listing.title_raw ?? '');
+  const resolved = resolveBrand(resolutionText(listing.brand_raw, listing.title_raw));
+  const garment = garmentOf(listing.brand_raw, listing.title_raw);
   return {
     brandId: listing.brand_id ?? resolved.brandId ?? null,
     sublineId: listing.subline_id ?? resolved.sublineId ?? null,

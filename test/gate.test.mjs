@@ -225,6 +225,12 @@ const TAKES_ONLY_DATA = [
   'saveListing', 'verifyListing', 'recordReview', 'prefill', 'parsePaste',
   'saveDrafts', 'runMatching', 'candidateItems', 'suggestionsFor', 'clustersFor',
   'watchItemHeat', 'unwatchItemHeat', 'isWatchedForHeat',
+  // runMatching takes a boolean that lets it accept the matchmaker's strongest
+  // proposals, which sounds like a claim and is not one: the caller cannot name
+  // a pair. WHICH links are permissible is re-derived inside matchRunner from
+  // the listing and item rows as they are now, by the same safeToApply test
+  // applySuggestions is held to. A mode the operator turns on, not a list they
+  // hand in — which is exactly the distinction this file draws.
   // Writes the strongest evidence class the platform stores — "these pieces
   // sold at these prices" — and is still data rather than a claim, because the
   // distinction this list draws is about EXISTING ROWS. saveSoldDrafts creates

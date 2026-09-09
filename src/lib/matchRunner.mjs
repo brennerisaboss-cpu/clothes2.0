@@ -72,6 +72,10 @@ async function itemsForBrands(client, brandIds) {
 /**
  * @param {object} opts
  * @param {import('pg').PoolClient} opts.client
+ *   A client of its own. This issues `begin`/`commit` per listing so one
+ *   failure cannot take the batch with it, which means handing it a client that
+ *   is already inside a transaction commits that transaction as a side effect.
+ *   Every caller connects one for the purpose; a future one should too.
  * @param {boolean} [opts.acceptSafeSuggestions]
  *   Also link listings the exact matcher cannot key, but which the matchmaker
  *   scores as strong against an existing item WITH NOTHING ASSUMED — the same

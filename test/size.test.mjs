@@ -119,3 +119,14 @@ test('the estimate says how much of itself is a different size', () => {
   // And neither is filtered away: a wrong-size comp is still a comp.
   assert.equal(offSize.comps, 3);
 });
+
+test('one step means the next size on both European scales', () => {
+  // Garment sizes step in twos and shoe sizes step in ones, over a range they
+  // share, and a bare number cannot say which it is. Halving to the garment
+  // scale gives a shoe a half-step ordinal — and an unrounded distance then
+  // read two adjacent boot sizes as further apart than three jacket sizes.
+  assert.equal(sizeWeight(parseSize('43'), parseSize('44')), 0.7, 'adjacent shoe sizes');
+  assert.equal(sizeWeight(parseSize('46'), parseSize('48')), 0.7, 'adjacent garment sizes');
+  assert.equal(sizeWeight(parseSize('43'), parseSize('43')), 1);
+  assert.equal(sizeWeight(parseSize('44'), parseSize('48')), 0.4, 'two garment sizes out');
+});

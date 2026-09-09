@@ -137,7 +137,21 @@ export function sizeWeight(target, comp) {
   if (target.region === 'UNKNOWN' || comp.region === 'UNKNOWN') return 1;
   if (target.region !== comp.region) return 1;
 
-  const steps = Math.abs(target.ordinal - comp.ordinal);
+  // Rounded, because one axis carries two scales that share a range.
+  //
+  // European garment sizes step in twos (44, 46, 48) and European SHOE sizes
+  // step in ones (42, 43, 44), and a bare number cannot say which it is — the
+  // ranges overlap exactly where both are common. Halving to the garment scale
+  // therefore gives a shoe a half-step ordinal, and an unrounded distance then
+  // read two adjacent boot sizes as further apart than three jacket sizes: a 43
+  // against a 44 fell straight to the floor weight.
+  //
+  // Rounding makes one step mean "the next size" on both scales, which is what
+  // the weights below are actually about. It is imprecise in the way the
+  // underlying fact is imprecise, rather than precise about the wrong scale.
+  // Nothing crosses between them regardless — a boot and a jacket are different
+  // garment types, so they are different items and never each other's comps.
+  const steps = Math.round(Math.abs(target.ordinal - comp.ordinal));
   if (steps === 0) return 1;
   if (steps === 1) return 0.7;
   if (steps === 2) return 0.4;
