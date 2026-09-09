@@ -70,8 +70,8 @@ npm run setup:demo                # setup, plus sample listings
 ### Verify
 
 ```bash
-npm test                  # 278 unit tests, no database needed
-npm run test:integration  # 35 tests against a real Postgres (needs DATABASE_URL)
+npm test                  # 558 unit tests, no database needed
+npm run test:integration  # 63 tests against a real Postgres (needs DATABASE_URL)
 npm run typecheck
 npm run verify:live       # real calls to every configured API — see below
 ```
@@ -117,6 +117,12 @@ Two listings are the same piece when and only when those agree
 (`src/lib/garment.mjs`), and a unique index on the key means two code paths
 cannot race and split a garment's comps in half.
 
+The era is read from an AD tag where a piece carries one and from a season code
+otherwise — `02AW`, `AW03`, `SS19`, `FW2018` — because the AD tag is a Comme des
+Garçons fact and nothing else in the roster has one. Both name the same
+production year and pool together, which changes nothing about how coarse the
+bucket is: AD2002 already spans SS02 and AW02.
+
 The order is deliberate — most certain first. Everything before the first
 unknown segment is what the piece is *known* to be, and an item pools with the
 more specific items that share that known part. So an M.A+ bag whose model
@@ -140,6 +146,12 @@ rather than a failure. Nothing is ever merged on a guess.
 After changing how identity is derived, existing rows keep their old keys — run
 `npm run rekey-items -- --dry-run` to see what would merge or split, then
 without the flag to apply it.
+
+**Run it once after pulling this version.** Season codes used to be read as
+model codes, so a listing saying "02AW" keyed on a model nobody printed on the
+garment and pooled with nothing; and nothing outside CDG had an era at all, so a
+house's whole output shared one comp set. Both are fixed in how keys are
+computed, and neither is fixed in the keys already stored.
 
 ## Which shops can be collected automatically
 
@@ -610,9 +622,16 @@ of it.
 
 ```bash
 npm run poll     # fetch from feed sources
+npm run match    # attach unmatched listings to items
 npm run alert    # score and notify
 npm run heat     # refresh attention signals
 ```
+
+`match` is the stage between collecting and scoring, and it is easy to skip
+because a poll does it for you. Only for what it polled: a pasted page, the
+capture endpoint and the mailbox reader all write listings with no item, and a
+listing with no item pools with nothing, has no comps and can never be scored.
+Run it after anything that adds listings by hand, or leave it on the schedule.
 
 Before adding a shop, check it:
 
@@ -648,9 +667,9 @@ Vercel plus a hosted Postgres is the intended shape.
    last two any long random string) in the project's environment variables,
    plus whichever API keys you want.
 3. Run `npm run setup` once against the production database.
-4. `vercel.json` already declares the schedules — poll every 15 minutes, alert
-   three minutes after each poll, attention signals daily. Each poll refreshes
-   exchange rates first, so they cannot silently go stale.
+4. `vercel.json` already declares the schedules — poll every 15 minutes, match
+   a minute later, alert three minutes after that, attention signals daily.
+   Each poll refreshes exchange rates first, so they cannot silently go stale.
 
 The scheduled endpoints refuse to run without `CRON_SECRET` rather than
 defaulting to open: an unauthenticated poll endpoint is a way for a stranger to
@@ -777,6 +796,8 @@ src/lib/           domain logic, framework-free and unit-tested
   priceHistory.mjs comps by condition tier, evidence weighting
   heat.mjs         cultural attention, kept away from scoring
   ingest.mjs       the rules that stop a bad poll rewriting history
+  matchRunner.mjs  the matching stage, shared by the button and `npm run match`
+  comps.mjs        which items lend comps to which, and what counts as one
 src/app/           Next.js App Router pages, server actions and cron endpoints
 ```
 

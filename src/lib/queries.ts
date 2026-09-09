@@ -774,6 +774,103 @@ export async function heatInputs(subject: HeatSubject) {
 }
 
 /**
+ * Everything the heat model needs for EVERY subject, in three round trips.
+ *
+ * `heatInputs` answers the same question for one subject and issues two queries
+ * to do it. The watchlist has a hundred and fifty subjects on a seeded install,
+ * so asking it per row is three hundred queries for one page — which is why the
+ * screen the handoff describes was never built. The model itself is pure and
+ * already computes per subject; only the fetching had to change.
+ *
+ * Listings are read once, carrying the three ids a subject can be scoped by,
+ * and grouped in memory. Bounded to a year: every window the model reads is
+ * sixty days wide and the turnover component only looks at listings that closed.
+ */
+export async function heatBoard() {
+  const subjects = await listHeatSubjects();
+  if (!subjects.length) {
+    return { subjects, listingsFor: () => [], signalsFor: () => [] };
+  }
+
+  const [listings, signals] = await Promise.all([
+    query<{
+      id: string;
+      brand_id: string | null;
+      subline_id: string | null;
+      item_id: string;
+      price_base: number | null;
+      date_seen: Date;
+      first_seen: Date;
+      closed_at: Date | null;
+      status: string;
+      source_role: string;
+      marketplace_kind: string | null;
+    }>(
+      // Deliberately every snapshot rather than the head of each chain, which
+      // is the one place in the platform that wants them: `turnoverVelocity`
+      // measures how long a listing sat AT A PRICE, and heatInputs already
+      // documents the consequence — a re-priced piece splits its dwell across
+      // two rows and turnover reads slightly faster than reality. Acceptable
+      // for a soft signal that is fenced out of the arbitrage score; it would
+      // not be acceptable for a price.
+      `select l.id, i.brand_id, i.subline_id, l.item_id, l.price_base, l.date_seen,
+              l.status::text as status, s.role::text as source_role,
+              s.marketplace_kind::text as marketplace_kind,
+              l.created_at as first_seen,
+              case when l.status in ('delisted','sold_confirmed') then l.date_seen end as closed_at
+         from listings l
+         join items i on i.id = l.item_id
+         join sources s on s.id = l.source_id
+        where l.date_seen > now() - interval '400 days'
+        order by l.date_seen desc
+        limit 50000`,
+    ),
+    query<{ subject_id: number; value: number; period_start: Date; source: string }>(
+      `select subject_id, value, period_start, source
+         from heat_signals
+        where subject_id = any($1::int[])
+        order by period_start asc`,
+      [subjects.map((s) => s.id)],
+    ),
+  ]);
+
+  const byBrand = new Map<string, typeof listings>();
+  const bySubline = new Map<string, typeof listings>();
+  const byItem = new Map<string, typeof listings>();
+  const push = (map: Map<string, typeof listings>, key: string | null, row: (typeof listings)[number]) => {
+    if (!key) return;
+    const list = map.get(key) ?? [];
+    list.push(row);
+    map.set(key, list);
+  };
+  for (const row of listings) {
+    push(byBrand, row.brand_id, row);
+    push(bySubline, row.subline_id, row);
+    push(byItem, row.item_id, row);
+  }
+
+  const signalsBySubject = new Map<number, typeof signals>();
+  for (const row of signals) {
+    const list = signalsBySubject.get(row.subject_id) ?? [];
+    list.push(row);
+    signalsBySubject.set(row.subject_id, list);
+  }
+
+  const scopeFor = (subject: HeatSubject) =>
+    subject.subject_type === 'item'
+      ? byItem.get(subject.item_id ?? '')
+      : subject.subject_type === 'subline'
+        ? bySubline.get(subject.subline_id ?? '')
+        : byBrand.get(subject.brand_id ?? '');
+
+  return {
+    subjects,
+    listingsFor: (subject: HeatSubject) => scopeFor(subject) ?? [],
+    signalsFor: (subject: HeatSubject) => signalsBySubject.get(subject.id) ?? [],
+  };
+}
+
+/**
  * The measured ratio between what pieces really sold for and what this
  * platform estimated, per brand and venue.
  *

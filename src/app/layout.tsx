@@ -29,6 +29,7 @@ async function Nav() {
     { href: '/add', label: 'Add', accent: true },
     { href: '/verify', label: 'Re-check', badge: due },
     { href: '/unresolved', label: 'Unresolved', badge: unresolved },
+    { href: '/heat', label: 'Heat' },
     { href: '/sources', label: 'Sources' },
     { href: '/alerts', label: 'Alerts' },
   ];

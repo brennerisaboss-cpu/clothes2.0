@@ -7,9 +7,19 @@
       "schedule": "*/15 * * * *"
     },
     {
+      "comment": "Match what the poll did not: pasted pages, captured URLs and mailbox alerts arrive with no item, and a listing with no item can never be scored. Between the poll and the alert, so anything matched here is scoreable by the time the alert reads it.",
+      "path": "/api/cron/match",
+      "schedule": "1,16,31,46 * * * *"
+    },
+    {
       "comment": "Score and alert, straight after the poll so latency stays small.",
       "path": "/api/cron/alert",
       "schedule": "3,18,33,48 * * * *"
+    },
+    {
+      "comment": "Attention signals. Daily is what the source publishes; asking more often returns the same numbers.",
+      "path": "/api/cron/heat",
+      "schedule": "20 4 * * *"
     }
   ]
 }
