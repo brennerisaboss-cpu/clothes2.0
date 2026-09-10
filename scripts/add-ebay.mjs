@@ -24,9 +24,13 @@
 //
 // --sold adds the other half, and it is the more valuable half. eBay's
 // Marketplace Insights API returns COMPLETED SALES: an item, a price, a date,
-// stated by the venue. That is the only sanctioned source of what somebody
-// actually paid that this platform can reach, and it is what moves a margin
-// from arithmetic on two hopes to a figure resting on a transaction.
+// stated by the venue. It is what moves a margin from arithmetic on two hopes
+// to a figure resting on a transaction.
+//
+// It is not the only route to that — a page of sold listings pasted on /add
+// records them from any venue you can open, and `npm run record-sale --item`
+// records what a piece fetched when you sold it yourself. What this adds is
+// that it happens without you.
 //
 // It is a limited release. The scope is granted per application, on request, by
 // eBay — separately from Buy API access and separately from the Application

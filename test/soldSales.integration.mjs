@@ -176,3 +176,23 @@ test('a sale ageing out of the window is never read as a disappearance', async (
   assert.equal(all.length, 2);
   assert.ok(all.every((r) => r.status === 'sold_confirmed'), 'a recorded sale is permanent');
 });
+
+test('a sale with no date is dropped, not written as an ask', async () => {
+  // Falling through would write it as an ordinary observation, which says the
+  // piece is ON the market at this price — the opposite of what the source
+  // reported. And an undated comp cannot be weighted for recency, so it would
+  // count as fresh for ever.
+  state.sales = [
+    sale('v1|8|0', 900, null),
+    sale('v1|9|0', 950, '2026-08-20T12:00:00.000Z'),
+  ];
+
+  const result = await poll();
+  assert.equal(result.ok, true, result.error ?? '');
+  assert.equal(result.sales, 1, 'only the dated one is a sale');
+  assert.equal(result.undatedSales, 1, 'and the other is counted rather than silent');
+
+  const all = await rows();
+  assert.equal(all.length, 1);
+  assert.equal(all[0].source_item_id, 'v1|9|0');
+});

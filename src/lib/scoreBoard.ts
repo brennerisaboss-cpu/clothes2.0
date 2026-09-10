@@ -26,6 +26,8 @@ export async function scoreListings(
     brand_id?: string | null;
     price_base: number | null;
     condition_tier: string | null;
+    /** Scoring weights comps by how far their size is from this one. */
+    size_raw?: string | null;
     date_seen: Date;
     last_verified_at: Date | null;
     entered_manually: boolean;

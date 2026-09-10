@@ -299,6 +299,7 @@ export async function runPoll({
   let inserted = 0;
   let unchanged = 0;
   let sales = 0;
+  let undatedSales = 0;
 
   for (const { raw, plan, itemId } of relevant) {
     const conditionRaw = raw.conditionRaw ? String(raw.conditionRaw).trim() : null;
@@ -317,15 +318,28 @@ export async function runPoll({
     // stopped appearing" is the only thing an adapter could possibly mean by
     // it, and that is an inference, not a sale. `sold_confirmed` exists for the
     // one case that is not an inference: the source saying outright that the
-    // item sold, on a date, at a price. Marketplace Insights is that case, and
-    // is the only adapter that may set this.
+    // item sold, on a date, at a price. Any adapter that can report that may
+    // set it; today only eBay's Marketplace Insights can.
     //
     // Dated to the sale rather than to the poll. A sale is a fact with a
     // timestamp, and stamping it with today's would let a three-month-old
     // result count as evidence gathered this morning — invisibly, since a
     // wrongly-dated comp produces a number rather than a complaint.
-    const soldAt = raw.evidence === 'confirmed_sale' ? parseDate(raw.soldAt) : null;
-    const isSale = raw.evidence === 'confirmed_sale' && soldAt != null;
+    const claimsSale = raw.evidence === 'confirmed_sale';
+    const soldAt = claimsSale ? parseDate(raw.soldAt) : null;
+    const isSale = claimsSale && soldAt != null;
+
+    // A sale with no date is dropped, not downgraded.
+    //
+    // Falling through would write it as an ordinary observation, which says the
+    // piece is on the market at this price — the opposite of what the source
+    // reported. And an undated comp cannot be weighted for recency, so it would
+    // count as fresh for ever. Refusing is the same choice made everywhere else
+    // here: an observation that cannot be recorded truthfully is not recorded.
+    if (claimsSale && !isSale) {
+      undatedSales++;
+      continue;
+    }
 
     const prior = priorById.get(raw.sourceItemId);
     // A sale is never a re-price of anything. It is a distinct, immutable
@@ -501,6 +515,11 @@ export async function runPoll({
     // tier the automated path can produce that somebody actually paid a price,
     // and until a source supplies one every margin on the screen rests on asks.
     sales,
+    // Sales the source reported without a date, and which were therefore
+    // dropped. Reported rather than silent: a source that states a sale and
+    // omits its date is an adapter or an API that has changed, and the symptom
+    // otherwise is simply fewer comps than expected.
+    undatedSales: undatedSales || undefined,
     delisted: absences.length,
     relisted: relinked.size,
     // Recorded on the run so a partial read is legible afterwards rather than

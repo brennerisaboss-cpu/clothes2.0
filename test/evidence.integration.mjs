@@ -191,3 +191,47 @@ test('a sale is representable, and only as itself', async () => {
 
   await client.query(`delete from listings where source_item_id like 'sale-fixture-%'`);
 });
+
+// --- a sale is not something to re-check -------------------------------------
+//
+// The re-check queue asks, every fortnight, whether a hand-entered listing is
+// still on the market. Its test was `status <> 'delisted'`, which was the same
+// set as "could still be for sale" until a hand-entered row could be a SALE — a
+// recorded sale and a pasted sold page are both entered_manually. They queued
+// for ever, asking whether a piece you already sold is still listed. A
+// disappearance was already excluded, and a sale is more certain than a
+// disappearance, not less.
+//
+// Copied from src/lib/queries.ts and must stay in step with it.
+const VERIFIABLE = "l.entered_manually and l.status in ('active', 'relisted')";
+
+test('a recorded sale never enters the re-check queue', async () => {
+  await client.query(
+    `insert into listings (item_id, source_id, source_item_id, title_raw, price, currency,
+                           price_base, fx_rate_at_snapshot, status, evidence,
+                           entered_manually, last_verified_at, date_seen, first_seen_at)
+     values ($1, $2, 'queue-sale', 'Recorded sale', 700, 'EUR', 700, 1,
+             'sold_confirmed', 'confirmed_sale', true,
+             -- Long past due, so only the status can be keeping it out.
+             now() - interval '90 days', now() - interval '90 days', null),
+            ($1, $2, 'queue-live', 'Still for sale', 800, 'EUR', 800, 1,
+             'active', 'active_ask', true,
+             now() - interval '90 days', now() - interval '90 days', now() - interval '90 days')`,
+    [itemId, EXIT],
+  );
+
+  const { rows } = await client.query(
+    `select l.source_item_id from listings l
+      where l.source_id = $1 and ${VERIFIABLE}
+        and (l.last_verified_at is null or l.last_verified_at <= now() - interval '14 days')`,
+    [EXIT],
+  );
+
+  assert.deepEqual(
+    rows.map((r) => r.source_item_id),
+    ['queue-live'],
+    'the live listing is due; the sale is finished',
+  );
+
+  await client.query(`delete from listings where source_item_id like 'queue-%'`);
+});

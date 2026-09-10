@@ -71,7 +71,7 @@ npm run setup:demo                # setup, plus sample listings
 
 ```bash
 npm test                  # 592 unit tests, no database needed
-npm run test:integration  # 74 tests against a real Postgres (needs DATABASE_URL)
+npm run test:integration  # 76 tests against a real Postgres (needs DATABASE_URL)
 npm run typecheck
 npm run verify:live       # real calls to every configured API — see below
 ```

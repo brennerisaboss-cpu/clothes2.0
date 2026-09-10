@@ -12,6 +12,7 @@ import type { PastedLink } from '@/lib/bulkPaste.mjs';
 import { runMatching as matchUnmatched } from '@/lib/matchRunner.mjs';
 import { suggestMatches, safeToApply, clusterListings, admissibleLinks } from '@/lib/matchmaker.mjs';
 import { describeGarment, garmentKey, garmentName } from '@/lib/garment.mjs';
+import { parseSize } from '@/lib/size.mjs';
 import { requireUnlocked } from '@/lib/session';
 
 export type SaveInput = {
@@ -74,7 +75,15 @@ export async function saveListing(input: SaveInput) {
     return { ok: false as const, error: 'Currency must be a 3-letter code, e.g. JPY.' };
   }
 
-  const sizeRegion = SIZE_REGIONS.has(input.sizeRegion ?? '') ? input.sizeRegion! : 'UNKNOWN';
+  // The sizing system, chosen on the form where there is a form and read from
+  // the size itself otherwise. A pasted page has a size and no dropdown, so
+  // defaulting straight to UNKNOWN threw away a fact the row was carrying —
+  // and a size only compares within its own system, so an unknown one compares
+  // with nothing. Same reader the poll runner uses, so a hand-entered "48" and
+  // a polled "48" land in the same place.
+  const sizeRegion = SIZE_REGIONS.has(input.sizeRegion ?? '')
+    ? input.sizeRegion!
+    : parseSize(input.sizeRaw).region;
   const conditionTier = TIERS.has(input.conditionTier ?? '') ? input.conditionTier! : null;
 
   const resolved = resolveBrand(`${input.brandRaw ?? ''} ${title}`);

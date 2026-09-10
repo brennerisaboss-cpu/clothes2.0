@@ -211,7 +211,15 @@ export async function verificationQueue(includeNotDue = false): Promise<ListingC
     `${CARD_SELECT}
       where l.entered_manually
         ${dueClause}
-        and l.status <> 'delisted'
+        -- Only things that could still be for sale.
+        --
+        -- The test was "status <> delisted", which was the same set until a
+        -- hand-entered row could be a SALE. A recorded sale and a pasted sold
+        -- page are both entered_manually, so they queued here for ever, asking
+        -- every fortnight whether a piece you already sold is still listed. A
+        -- disappearance was already excluded; a sale is more certain than a
+        -- disappearance, not less.
+        and l.status in ('active', 'relisted')
         and not exists (select 1 from listings sup where sup.supersedes_id = l.id)
       order by l.last_verified_at asc nulls first
       limit 200`,
@@ -234,8 +242,10 @@ export async function facets() {
       `select
          (select count(*) from brands) as brands,
          (select count(*) from listings) as total,
+         -- The same set verificationQueue returns, or the badge counts rows
+         -- the screen does not show.
          (select count(*) from listings l
-           where l.entered_manually and l.status <> 'delisted'
+           where l.entered_manually and l.status in ('active', 'relisted')
              and (l.last_verified_at is null or l.last_verified_at <= now() - interval '14 days')
              and not exists (select 1 from listings sup where sup.supersedes_id = l.id)) as due,
          (select count(*) from listings l
@@ -264,6 +274,7 @@ export async function conditionLabels(sourceId?: string) {
 export type ItemRow = {
   id: string;
   canonical_name: string;
+  brand_id?: string | null;
   subline_id: string | null;
   subline_name: string | null;
   ad_year: number | null;
@@ -276,7 +287,7 @@ export type ItemRow = {
 export async function getItem(id: string) {
   return one<ItemRow>(
     `select i.id, i.canonical_name, i.subline_id, i.ad_year, i.ad_year_status,
-            i.ad_year_basis,
+            i.ad_year_basis, i.brand_id,
             sub.display_name as subline_name,
             (select count(*) from listings l where l.item_id = i.id)::int as listing_count
        from items i

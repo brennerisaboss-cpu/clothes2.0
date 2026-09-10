@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getItem, itemObservations } from '@/lib/queries';
+import { getItem, itemObservations, calibrationRatios } from '@/lib/queries';
 import { summariseItem, MIN_COMPS } from '@/lib/priceHistory.mjs';
 import { scoreAllRoutes } from '@/lib/scoring.mjs';
 import ScoreBreakdown from '@/components/ScoreBreakdown';
@@ -56,13 +56,25 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
   const acquisitionSummary = summariseItem(acquisitionObs);
   const summary = summariseItem(observations);
 
-  const routes = await listRoutes();
+  const [routes, calibration] = await Promise.all([
+    listRoutes(),
+    // The same correction /opportunities applies. Without it this screen shows a
+    // different profit for the same listing than the screen that ranked it —
+    // and this is the one you open to check that number.
+    calibrationRatios().catch(() => new Map()),
+  ]);
   // Score the cheapest live acquisition listing — the one you would actually buy.
   const buyCandidates = observations
     .filter((o) => o.is_head && o.status === 'active' && o.source_role === 'acquisition' && o.price_base != null)
     .sort((a, b) => Number(a.price_base) - Number(b.price_base));
   const scored = buyCandidates.length
-    ? scoreAllRoutes({ listing: buyCandidates[0], observations, routes })
+    ? scoreAllRoutes({
+        listing: buyCandidates[0],
+        observations,
+        routes,
+        calibration,
+        brandId: item.brand_id ?? null,
+      })
     : null;
   const roots = chainRoots(observations);
 
