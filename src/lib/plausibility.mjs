@@ -81,3 +81,71 @@ function median(sorted) {
   const i = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[i] : (sorted[i - 1] + sorted[i]) / 2;
 }
+
+/**
+ * Which currency WOULD make this catalogue look like clothing?
+ *
+ * The veto stops a wrong currency reaching the table, and then said
+ * `--currency XXX` — a literal placeholder, on the one screen where the
+ * operator has least to go on. They know the shop; they do not necessarily know
+ * that a Japanese-looking domain quotes euros, which is exactly the case that
+ * produces this.
+ *
+ * The arithmetic is available and trivial. The raw prices are known, and the
+ * rate table says what every candidate currency converts at, so the question
+ * "which of these would put the median where clothing actually sits" has an
+ * answer rather than a guess. Where exactly one candidate fits, it is named;
+ * where several do, they are all named, because narrowing eight possibilities
+ * to two is most of the work even when it does not finish it.
+ *
+ * It is a suggestion and is worded as one. Nothing applies it: `fix-currency`
+ * re-converts every snapshot a source ever wrote, which is not something to do
+ * on an inference from a median.
+ *
+ * @param {number[]} rawPrices        as the shop quoted them, unconverted
+ * @param {Map<string, number>} rates candidate currency -> rate into base
+ * @returns {{ currency: string, medianBase: number }[]} best fit first
+ */
+export function currenciesThatWouldFit(rawPrices, rates) {
+  const prices = (rawPrices ?? []).map(Number).filter((n) => Number.isFinite(n) && n > 0);
+  if (!prices.length || !rates?.size) return [];
+
+  const sorted = [...prices].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+
+  // The middle of the plausible band, geometrically: the band spans three
+  // orders of magnitude, so the arithmetic midpoint would sit almost at the top
+  // of it and rank a £24,000 median as a better fit than a £200 one.
+  const ideal = Math.sqrt(MIN_PLAUSIBLE_BASE * MAX_PLAUSIBLE_BASE);
+
+  return [...rates.entries()]
+    .map(([currency, rate]) => ({ currency, medianBase: median * Number(rate) }))
+    .filter(({ medianBase }) => isPlausiblePrice(medianBase).plausible)
+    .sort((a, b) => Math.abs(Math.log(a.medianBase / ideal)) - Math.abs(Math.log(b.medianBase / ideal)));
+}
+
+/** The sentence to print when a poll is vetoed for an implausible catalogue. */
+export function describeCurrencyFix(sourceId, configured, fits) {
+  if (!fits.length) {
+    return (
+      `Fix with: npm run fix-currency -- --source ${sourceId} --currency <code>. ` +
+      `No currency on file would put this catalogue in a plausible range, so the ` +
+      `prices themselves may be the problem rather than the currency.`
+    );
+  }
+
+  const named = fits
+    .slice(0, 4)
+    .map((f) => `${f.currency} → ${Math.round(f.medianBase)}`)
+    .join(', ');
+
+  // Listed, not ranked. Several currencies put a median in the plausible band
+  // and the arithmetic cannot tell them apart — presenting one as the answer
+  // would dress a shortlist as a finding, on the screen where being wrong costs
+  // a re-conversion of every snapshot the source ever wrote.
+  return (
+    `Configured as ${configured}. A median in these would be plausible instead: ${named}. ` +
+    `Check the shop, then: npm run fix-currency -- --source ${sourceId} --currency <code>`
+  );
+}

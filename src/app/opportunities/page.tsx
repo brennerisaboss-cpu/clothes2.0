@@ -304,7 +304,25 @@ export default async function OpportunitiesPage({
                   </Link>
                   <p className="mt-0.5 text-[11px] text-muted">
                     {listing.subline_name ?? 'unresolved'}
-                    {listing.ad_year ? ` · AD${listing.ad_year}` : ''} · {listing.source_name}
+                    {listing.ad_year ? ` · AD${listing.ad_year}` : ''} ·{' '}
+                    {/* The listing itself, on the shop that has it.
+                        Every link on this row went inwards — the thumbnail to a
+                        snapshot page, the title to the item — so the screen
+                        named a price, a venue and a margin and offered no way
+                        to reach the thing it was describing. The one action
+                        this page exists to support is going and looking. */}
+                    {listing.url ? (
+                      <a
+                        href={listing.url}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        className="underline decoration-dotted hover:text-accent"
+                      >
+                        {listing.source_name} ↗
+                      </a>
+                    ) : (
+                      listing.source_name
+                    )}
                     {listing.size_raw ? ` · ${listing.size_raw}` : ''}
                     {listing.condition_tier ? ` · ${listing.condition_tier.replace(/_/g, ' ')}` : ''}
                   </p>
@@ -354,17 +372,37 @@ export default async function OpportunitiesPage({
                     {best.spreadPct == null ? '—' : `${(best.spreadPct * 100).toFixed(0)}% spread`}
                   </p>
                   <p className="ink-indigo text-[11px]">
-                    conf {best.confidence?.toFixed(2)} · {best.resale?.comps} comp
-                    {best.resale?.comps === 1 ? '' : 's'}
+                    conf {best.confidence?.toFixed(2)} ·{' '}
+                    {/* The comp count, and a way to go and read them.
+                        A resale figure resting on "4 comps" that cannot be
+                        opened is a number to be taken on trust, and this screen
+                        has no business asking for trust — the item page lists
+                        every comp with its venue, its price and its link, and
+                        nothing pointed at it. */}
+                    <Link href={`/item/${listing.item_id}`} className="underline decoration-dotted hover:text-accent">
+                      {best.resale?.comps} comp{best.resale?.comps === 1 ? '' : 's'}
+                    </Link>
                     {/* Where the comps came from, which is not always the venue
                         being sold on. Saying "via grailed" beside a figure
                         derived from other venues reads as though Grailed
                         produced it. */}
                     {best.resale?.venueScoped === false ? ' from all venues' : ''}
-                    {best.resale?.borrowedComps === best.resale?.comps && (best.resale?.comps ?? 0) > 0
-                      ? ', other models'
-                      : ''}
                   </p>
+                  {/* How many of those comps are a DIFFERENT GARMENT.
+                      An item whose model or material nobody stated borrows from
+                      items that agree on everything it does know — that is what
+                      makes it valuable at all — but the row said "4 comps" and
+                      named none of it unless every single one was borrowed. So
+                      a figure resting on three other models and one real comp
+                      read exactly like a figure resting on four real ones, and
+                      the listings behind it looked invented. */}
+                  {(best.resale?.borrowedComps ?? 0) > 0 ? (
+                    <p className="text-[11px] text-accent">
+                      {best.resale?.borrowedComps === best.resale?.comps
+                        ? 'all other models'
+                        : `${best.resale?.borrowedComps} of them other models`}
+                    </p>
+                  ) : null}
                   {best.provisional ? (
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-accent">
                       provisional

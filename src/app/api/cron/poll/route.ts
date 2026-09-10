@@ -5,6 +5,7 @@ import { runPoll } from '@/lib/pollRunner.mjs';
 import { checkCron } from '@/lib/cronAuth';
 import { adapterFor } from '@/lib/adapters/index.mjs';
 import { DUE_FOR_POLL } from '@/lib/ingest.mjs';
+import { LimiterPool } from '@/lib/limiter.mjs';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -31,6 +32,10 @@ export async function GET(request: Request) {
     // scheduled poll that stops for want of a contact simply gathers nothing,
     // for as long as nobody notices.
     const { ua } = collectingUserAgent();
+    // One pool for the whole tick. Built per source it paced nothing between
+    // them, and most of this roster shares a platform where the limit is per
+    // caller rather than per shop.
+    const limiters = new LimiterPool();
 
     for (const source of sources) {
       // One registry, shared with `npm run poll`. This endpoint used to keep
@@ -49,6 +54,7 @@ export async function GET(request: Request) {
         // Never a fabricated contact. A poll that cannot say who is making it
         // does not go out — see src/lib/userAgent.mjs.
         userAgent: ua,
+        limiters,
       });
       results.push({ source: source.id, ...result });
     }

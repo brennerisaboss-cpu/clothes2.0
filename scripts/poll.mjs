@@ -11,6 +11,7 @@ import pg from 'pg';
 import { collectingUserAgent, NO_CONTACT_WARNING } from '../src/lib/userAgent.mjs';
 import { runPoll } from '../src/lib/pollRunner.mjs';
 import { DUE_FOR_POLL } from '../src/lib/ingest.mjs';
+import { LimiterPool } from '../src/lib/limiter.mjs';
 import { ADAPTERS } from '../src/lib/adapters/index.mjs';
 import { fetchRates, isFresh } from '../src/lib/adapters/fx.mjs';
 
@@ -94,6 +95,11 @@ const { rows: covered } = await client.query(
 );
 const haveRate = new Set([BASE, ...covered.map((r) => r.base_currency)]);
 
+// One pool for the whole run, so a shop polled eighth is paced against the
+// seven before it. Most of this roster is on one platform, where the limit is
+// per caller rather than per shop.
+const limiters = new LimiterPool();
+
 for (const source of sources) {
   const adapterId = source.config?.adapter ?? 'shopify';
   const adapter = ADAPTERS[adapterId];
@@ -119,6 +125,7 @@ for (const source of sources) {
     adapter,
     baseCurrency: process.env.BASE_CURRENCY ?? 'EUR',
     userAgent: UA,
+    limiters,
   });
   const ms = Date.now() - started;
 

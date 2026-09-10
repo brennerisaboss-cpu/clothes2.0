@@ -9,41 +9,11 @@ import {
   cooldownMinutes,
 } from './ingest.mjs';
 import { planMatch } from './matching.mjs';
-import { assessCatalogue } from './plausibility.mjs';
+import { assessCatalogue, currenciesThatWouldFit, describeCurrencyFix } from './plausibility.mjs';
 import { sublineById } from './brands/index.mjs';
 import { normalizeAlias } from './normalize.mjs';
 import { parseSize } from './size.mjs';
-
-// How fast a source is asked, when it has not said otherwise.
-//
-// Was 500ms — two requests a second, sustained, for as many pages as a
-// catalogue has. That is faster than a person browsing and faster than several
-// hosting setups will tolerate before a 429, and the cost of being wrong is
-// asymmetric: too slow adds seconds to a poll that runs on a timer, too fast
-// gets the source to stop answering. A shop's own Crawl-delay still raises it,
-// and an adapter's documented limit still raises it; nothing lowers it.
-const DEFAULT_MIN_INTERVAL_MS = 1500;
-
-class HostLimiter {
-  constructor(minIntervalMs = DEFAULT_MIN_INTERVAL_MS) {
-    this.last = 0;
-    this.delayMs = minIntervalMs;
-  }
-  setCrawlDelay(seconds) {
-    if (Number.isFinite(seconds) && seconds > 0) {
-      this.delayMs = Math.max(this.delayMs, seconds * 1000);
-    }
-  }
-  /** An adapter that knows its own documented rate limit says so here. */
-  setMinInterval(ms) {
-    if (Number.isFinite(ms) && ms > 0) this.delayMs = Math.max(this.delayMs, ms);
-  }
-  async wait() {
-    const since = Date.now() - this.last;
-    if (since < this.delayMs) await new Promise((r) => setTimeout(r, this.delayMs - since));
-    this.last = Date.now();
-  }
-}
+import { HostLimiter, rateLimitHost } from './limiter.mjs';
 
 /** Parse a source timestamp, returning null rather than an Invalid Date. */
 function parseDate(value) {
@@ -143,6 +113,8 @@ export async function runPoll({
   baseCurrency = 'EUR',
   userAgent = 'resale-tracker/0.1',
   fetchImpl,
+  /** A LimiterPool shared by every source in this run. See limiter.mjs. */
+  limiters = null,
   now = new Date(),
 }) {
   const started = await client.query(
@@ -192,8 +164,26 @@ export async function runPoll({
   }
 
   const config = { ...(source.config ?? {}), userAgent };
-  const limiter = new HostLimiter();
+
+  // The limiter comes from the caller, and that is the fix rather than a
+  // detail. Built here it was one per source: it paced a shop's own pages and
+  // did nothing at all between shops, so eight sources went out back to back —
+  // and where those shops share a platform, which most of this roster does,
+  // that is one caller asking one edge two dozen times in a minute. The ones
+  // polled last were refused, on robots.txt, before fetching anything.
+  //
+  // A run without a pool still gets a limiter, so a test or a one-off keeps
+  // working; it simply has nothing to pace against.
+  const limiter =
+    limiters?.for?.(rateLimitHost(config, source.config?.adapter ?? 'shopify')) ??
+    new HostLimiter();
+
   const result = await adapter.fetchListings(config, { fetchImpl, limiter });
+
+  // A refusal is information about the HOST, not about this source. Slowing the
+  // group on the first one is what stops every other shop behind the same edge
+  // discovering the same limit for itself, one 429 at a time.
+  if (result.rateLimited && limiter.backOff) limiter.backOff();
 
   const previousCount = source.last_good_count ?? 0;
 
@@ -274,11 +264,39 @@ export async function runPoll({
       { currency },
     );
     if (check.verdict === 'implausible') {
+      // Say which currency it probably IS, rather than "XXX".
+      //
+      // The veto is right and the sentence after it was useless: a literal
+      // placeholder, on the one screen where the operator has least to go on.
+      // They know the shop; what they may not know is that a Japanese-looking
+      // domain quotes euros, which is exactly the case that produces this.
+      //
+      // The arithmetic is available and trivial — the raw prices are known and
+      // the rate table says what each candidate converts at — so "which of
+      // these would put the median where clothing sits" has an answer. Several
+      // usually fit, and all of them are named rather than one being chosen:
+      // narrowing eight possibilities to three is most of the work even when it
+      // does not finish it, and fix-currency re-converts every snapshot the
+      // source ever wrote, which is not a thing to do on a ranked guess.
+      const { rows: rateRows } = await client.query(
+        `select distinct on (base_currency) base_currency, rate
+           from fx_rates where quote_currency = $1
+          order by base_currency, as_of desc`,
+        [baseCurrency],
+      );
+      const rates = new Map(rateRows.map((r) => [r.base_currency, Number(r.rate)]));
+      if (!rates.has(baseCurrency)) rates.set(baseCurrency, 1);
+
+      const fits = currenciesThatWouldFit(
+        result.listings.map((l) => Number(l.price)),
+        rates,
+      ).filter((f) => f.currency !== currency);
+
       return finish({
         ok: false,
         error:
           `prices implausible for ${currency} — ${check.reason}. ` +
-          `Fix with: npm run fix-currency -- --source ${source.id} --currency XXX`,
+          describeCurrencyFix(source.id, currency, fits),
         count: result.listings.length,
       });
     }

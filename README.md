@@ -70,7 +70,7 @@ npm run setup:demo                # setup, plus sample listings
 ### Verify
 
 ```bash
-npm test                  # 600 unit tests, no database needed
+npm test                  # 609 unit tests, no database needed
 npm run test:integration  # 81 tests against a real Postgres (needs DATABASE_URL)
 npm run typecheck
 npm run verify:live       # real calls to every configured API — see below
@@ -712,6 +712,14 @@ failure that must not be answered by keeping the schedule.
 
 Three things now hold, and none of them did:
 
+- **Sources are paced against each other, not just against themselves.** The
+  limiter used to be built per poll, so it spaced one shop's own pages and did
+  nothing between shops — and most of this roster is `*.myshopify.com`, where
+  the limit is per caller rather than per shop. Eight shops politely paced
+  individually is still one address asking one edge two dozen times a minute,
+  which is why the shops polled last were the ones refused. They now share one
+  limiter for the run, and the first refusal slows the whole group rather than
+  each shop discovering the limit for itself.
 - **A rate limit keeps the pages that already arrived.** A shop whose catalogue
   runs past the point where it first refuses could previously ingest *nothing* —
   the poll failed, a failed poll writes nothing, and the next run re-fetched the
