@@ -70,8 +70,8 @@ npm run setup:demo                # setup, plus sample listings
 ### Verify
 
 ```bash
-npm test                  # 592 unit tests, no database needed
-npm run test:integration  # 76 tests against a real Postgres (needs DATABASE_URL)
+npm test                  # 600 unit tests, no database needed
+npm run test:integration  # 81 tests against a real Postgres (needs DATABASE_URL)
 npm run typecheck
 npm run verify:live       # real calls to every configured API — see below
 ```
@@ -703,6 +703,31 @@ because a poll does it for you. Only for what it polled: a pasted page, the
 capture endpoint and the mailbox reader all write listings with no item, and a
 listing with no item pools with nothing, has no comps and can never be scored.
 Run it after anything that adds listings by hand, or leave it on the schedule.
+
+### When a shop starts refusing
+
+A `429` means you are asking too often, and it is the one failure that is a
+statement about the schedule rather than about the request. So it is the one
+failure that must not be answered by keeping the schedule.
+
+Three things now hold, and none of them did:
+
+- **A rate limit keeps the pages that already arrived.** A shop whose catalogue
+  runs past the point where it first refuses could previously ingest *nothing* —
+  the poll failed, a failed poll writes nothing, and the next run re-fetched the
+  same pages fifteen minutes later and hit the same wall. Partial data was
+  always safe here, because an incomplete enumeration may add and re-price and
+  may never conclude that anything is gone.
+- **The source is then left alone**, for as long as its `Retry-After` asked, or
+  an hour if it named nothing. `/sources` says so, so a source being paced does
+  not look like a source that is broken.
+- **`poll_interval_minutes` is finally read.** It has been in the schema since
+  the first migration and nothing consulted it, so a shop configured for twice a
+  day was polled every fifteen minutes — ninety-six times a day. Unset now means
+  every six hours rather than every tick.
+
+`npm run poll -- --source <id>` bypasses both: naming a source is a person
+deciding, and the pacing is there to run a schedule.
 
 Before adding a shop, check it:
 

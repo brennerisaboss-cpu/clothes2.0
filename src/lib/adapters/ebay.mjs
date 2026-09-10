@@ -238,6 +238,8 @@ export async function fetchListings(config, deps = {}) {
       failures.length === queries.length
         ? `all ${queries.length} searches failed — first: ${failures[0]}`
         : `no listings collected — ${failures[0]}${rateLimited ? ' (stopped on a rate limit)' : ''}`,
+      undefined,
+      { rateLimited: rateLimited || undefined },
     );
   }
 
@@ -248,6 +250,9 @@ export async function fetchListings(config, deps = {}) {
 
   return succeeded(listings, {
     complete: allComplete,
+    // A limit reached mid-run is why this stopped, and the runner turns it into
+    // a cooldown rather than asking again on the next tick.
+    rateLimited: rateLimited || undefined,
     pages: totalPages,
     note:
       `${listings.length} across ${queries.length - failures.length} of ${queries.length} searches` +

@@ -222,10 +222,13 @@ export async function fetchListings(config, deps = {}) {
       failures.length === queries.length
         ? `all ${queries.length} searches failed — first: ${failures[0]}`
         : `no sales collected — ${failures[0]}${rateLimited ? ' (stopped on a rate limit)' : ''}`,
+      undefined,
+      { rateLimited: rateLimited || undefined },
     );
   }
 
   return succeeded(listings, {
+    rateLimited: rateLimited || undefined,
     // NEVER complete, on any run, however well it went.
     //
     // This is a ranked sample of sales over a window, not an enumeration of a

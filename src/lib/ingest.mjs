@@ -144,3 +144,59 @@ export function planAbsences(previousActive, seenIds, relinked) {
       reason: 'absent from a complete, successful poll',
     }));
 }
+
+/**
+ * Which sources are due, and which have asked to be left alone.
+ *
+ * Two clauses that were both missing, and between them they are why a busy shop
+ * ends up rate-limiting even robots.txt.
+ *
+ * CADENCE. `poll_interval_minutes` has been in the schema since the first
+ * migration, and scripts/poll.mjs opens by explaining why it matters — "a fast
+ * marketplace turns over in minutes, a one-person archive shop in weeks, and
+ * applying one schedule to both is either rude or useless". It then selected
+ * every feed source and polled all of them on every tick. A shop configured for
+ * twice a day was read ninety-six times a day.
+ *
+ * COOLDOWN. A 429 is the one failure that is the source telling you the
+ * schedule is the problem, so it is the one failure that must not be answered
+ * by keeping the schedule.
+ *
+ * Measured from the last ATTEMPT rather than the last good poll. A source that
+ * can never report a complete catalogue — a search, a results page — never
+ * updates `last_good_poll_at`, so pacing off that would leave exactly the
+ * sources that cannot enumerate being polled on every tick for ever, which is
+ * the population most likely to rate-limit.
+ *
+ * `--source x` and a manual run bypass this deliberately: asking for one source
+ * by name is a person deciding, and a cooldown is guidance for a schedule.
+ */
+export const DUE_FOR_POLL = `
+  (s.cooldown_until is null or s.cooldown_until <= now())
+  and not exists (
+    select 1 from poll_runs pr
+     where pr.source_id = s.id
+       and pr.started_at > now() - (coalesce(s.poll_interval_minutes, 360) || ' minutes')::interval
+  )
+`;
+
+/** How long to leave a source alone when it rate-limits and names no delay. */
+export const DEFAULT_COOLDOWN_MINUTES = 60;
+
+/**
+ * When a source may next be polled, after it answered 429.
+ *
+ * The shop's own number where it gave one, bounded at both ends: a `Retry-After`
+ * of two seconds is not a cooldown worth recording, and one of a fortnight is a
+ * header parking a source indefinitely. Neither bound overrides a shop that
+ * asked for something reasonable, which is almost all of them.
+ */
+export const MIN_COOLDOWN_MINUTES = 5;
+export const MAX_COOLDOWN_MINUTES = 24 * 60;
+
+export function cooldownMinutes(retryAfterSeconds) {
+  const asked = Number(retryAfterSeconds);
+  if (!Number.isFinite(asked) || asked <= 0) return DEFAULT_COOLDOWN_MINUTES;
+  const minutes = Math.ceil(asked / 60);
+  return Math.min(MAX_COOLDOWN_MINUTES, Math.max(MIN_COOLDOWN_MINUTES, minutes));
+}

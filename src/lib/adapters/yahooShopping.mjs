@@ -156,7 +156,8 @@ export async function fetchListings(config, deps = {}) {
   // failure (handled above as a 403). Everything failing for other reasons is
   // still a failure: there is no data, and no reason to think this is healthy.
   if (failures.length === (queries.length || 1)) {
-    return failed(`all searches failed — first: ${failures[0]}`);
+    return failed(`all searches failed — first: ${failures[0]}`, undefined,
+      { rateLimited: rateLimited || undefined });
   }
   if (failures.length) allComplete = false;
 
@@ -173,6 +174,9 @@ export async function fetchListings(config, deps = {}) {
   return succeeded(listings, {
     complete: false,
     pages: totalPages,
+    // A limit reached mid-run is why this stopped, and the runner turns it into
+    // a cooldown rather than asking again on the next tick.
+    rateLimited: rateLimited || undefined,
     note:
       availableTotal != null && availableTotal > listings.length
         ? `${listings.length} of ${availableTotal} results fetched; capped`

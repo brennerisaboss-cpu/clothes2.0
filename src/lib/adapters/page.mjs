@@ -32,7 +32,7 @@
 // challenge or route around bot protection. A page that answers a plain
 // request is a page that permits one; a page that does not is a page to paste.
 
-import { succeeded, failed } from './contract.mjs';
+import { succeeded, failed, retryAfterSeconds } from './contract.mjs';
 import { parseRobots, isAllowed } from '../robots.mjs';
 import { parseHtml } from '../html.mjs';
 import { walkParsedHtml } from '../pastedHtml.mjs';
@@ -79,7 +79,20 @@ export async function fetchListings(config, deps = {}) {
     });
     if (res.status === 200) groups = parseRobots(await res.text());
     else if (res.status === 404) groups = [];
-    else return failed(`robots.txt returned ${res.status} — treated as do-not-fetch`);
+    else if (res.status === 429) {
+      // A rate limit is not a refusal. "Do-not-fetch" is the right reading of an
+      // UNREADABLE robots.txt, where permission is genuinely unknown; a 429 says
+      // "too often", which is about frequency and not about permission. The run
+      // still stops — permission cannot be confirmed this minute — but as a rate
+      // limit, which becomes a cooldown rather than the same request again in
+      // fifteen minutes.
+      const wait = retryAfterSeconds(res.headers?.get?.('retry-after'));
+      return failed(
+        'rate limited on robots.txt',
+        wait ? `the site asked for ${wait}s` : 'no Retry-After given',
+        { rateLimited: true, retryAfterSeconds: wait ?? undefined },
+      );
+    } else return failed(`robots.txt returned ${res.status} — treated as do-not-fetch`);
   } catch (err) {
     return failed(`robots.txt unreachable: ${err?.message ?? err}`);
   }
@@ -101,8 +114,14 @@ export async function fetchListings(config, deps = {}) {
   }
 
   if (res.status === 429) {
-    const retryAfter = res.headers?.get?.('retry-after');
-    return failed('rate limited', retryAfter ? `Retry-After: ${retryAfter}` : undefined);
+    // One page and nothing collected yet, so there is nothing to keep — but it
+    // is still a rate limit rather than a fault, and becomes a cooldown.
+    const wait = retryAfterSeconds(res.headers?.get?.('retry-after'));
+    return failed(
+      'rate limited',
+      wait ? `the site asked for ${wait}s` : 'no Retry-After given',
+      { rateLimited: true, retryAfterSeconds: wait ?? undefined },
+    );
   }
   // 403 and 401 here mean the shop declined to serve this request. That is an
   // answer, and the answer is no — it is not a signal to try again wearing

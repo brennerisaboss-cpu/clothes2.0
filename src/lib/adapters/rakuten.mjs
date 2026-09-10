@@ -16,7 +16,7 @@
 // auctions, no C2C. For CDG that means brand-recycle boutiques running Ichiba
 // storefronts — a real but shallow surface.
 
-import { succeeded, failed } from './contract.mjs';
+import { succeeded, failed, retryAfterSeconds } from './contract.mjs';
 
 export const id = 'rakuten';
 
@@ -70,7 +70,13 @@ export async function fetchListings(config, deps = {}) {
       return failed(`page ${page} request failed: ${err?.message ?? err}`);
     }
 
-    if (res.status === 429) return failed(`rate limited on page ${page}`);
+    if (res.status === 429) {
+      // Reported as a rate limit so the runner can put the source on a cooldown
+      // rather than asking again on the next tick.
+      const wait = retryAfterSeconds(res.headers?.get?.('retry-after'));
+      return failed(`rate limited on page ${page}`, undefined,
+        { rateLimited: true, retryAfterSeconds: wait ?? undefined });
+    }
     // Rakuten uses 400 for a quota breach as well as bad params, so the message
     // stays honest about the ambiguity rather than guessing.
     if (res.status === 400) return failed(`page ${page} returned 400 — bad parameters or quota exceeded`);

@@ -10,6 +10,7 @@
 import pg from 'pg';
 import { collectingUserAgent, NO_CONTACT_WARNING } from '../src/lib/userAgent.mjs';
 import { runPoll } from '../src/lib/pollRunner.mjs';
+import { DUE_FOR_POLL } from '../src/lib/ingest.mjs';
 import { ADAPTERS } from '../src/lib/adapters/index.mjs';
 import { fetchRates, isFresh } from '../src/lib/adapters/fx.mjs';
 
@@ -28,14 +29,24 @@ const only = idx > -1 ? process.argv[idx + 1] : null;
 const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
 await client.connect();
 
+// Naming one source bypasses both the cadence and any cooldown: asking for a
+// source by name is a person deciding, and those two exist to pace a schedule.
 const { rows: sources } = await client.query(
-  `select * from sources
-    where tier = 'feed' and automation_allowed
-      and permission_status <> 'declined'
-      ${only ? 'and id = $1' : ''}
-    order by id`,
+  `select s.* from sources s
+    where s.tier = 'feed' and s.automation_allowed
+      and s.permission_status <> 'declined'
+      ${only ? 'and s.id = $1' : `and ${DUE_FOR_POLL}`}
+    order by s.id`,
   only ? [only] : [],
 );
+
+if (!only && !sources.length) {
+  console.log(
+    '\nNothing is due. Sources are polled on their own poll_interval_minutes, and a\n' +
+    'source that answered 429 is left alone until its cooldown passes.\n' +
+    'Name one to poll it anyway:  npm run poll -- --source <id>\n',
+  );
+}
 
 if (!sources.length) {
   console.log('No feed sources configured. Manual-tier sources are never polled.');
@@ -121,6 +132,11 @@ for (const source of sources) {
     // saying every time rather than once, because it is the standing limit of
     // a source like this and not a transient condition.
     if (result.partial) console.log(`        nothing marked gone — ${result.partial}`);
+    if (result.cooldownMinutes) {
+      console.log(
+        `        rate limited — leaving ${source.id} alone for ${result.cooldownMinutes} minutes`,
+      );
+    }
 
     // Condition words this source used that nothing maps to a tier. Worth
     // saying, because a listing whose condition is unmapped is valued against
@@ -136,6 +152,11 @@ for (const source of sources) {
   } else {
     // A vetoed poll is a normal, expected outcome, not a crash. Nothing changed.
     console.warn(`  ${source.id}: NOT APPLIED — ${result.error} (${ms}ms)`);
+    if (result.cooldownMinutes) {
+      console.warn(
+        `        leaving it alone for ${result.cooldownMinutes} minutes rather than asking again`,
+      );
+    }
   }
 }
 

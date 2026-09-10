@@ -89,10 +89,29 @@ export default async function SourcesPage() {
                             {s.last_run_error}
                           </p>
                         ) : null}
+                        {/* A source being left alone is not a source that is
+                            broken, and the two used to look identical: the row
+                            showed a failure and the next poll simply did not
+                            happen. Saying so is the difference between "this
+                            stopped working" and "it asked for room, and it has
+                            it until then". */}
+                        {s.cooldown_until && new Date(s.cooldown_until) > new Date() ? (
+                          <p className="mt-0.5 text-[11px] leading-snug text-accent">
+                            rate limited — left alone until{' '}
+                            {new Date(s.cooldown_until).toISOString().slice(11, 16)}
+                          </p>
+                        ) : null}
                       </>
                     ) : (
                       '—'
                     )}
+                    {s.tier === 'feed' && s.poll_interval_minutes ? (
+                      <p className="mt-0.5 text-[10px] uppercase tracking-wide text-muted/70">
+                        every {s.poll_interval_minutes >= 60
+                          ? `${Math.round(s.poll_interval_minutes / 60)}h`
+                          : `${s.poll_interval_minutes}m`}
+                      </p>
+                    ) : null}
                   </td>
                 </tr>
               ))}

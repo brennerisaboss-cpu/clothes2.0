@@ -68,6 +68,15 @@
  * @property {string=}     error
  * @property {number=}     pages
  * @property {string=}     note
+ * @property {boolean=}    rateLimited
+ *   The source asked to be left alone. Distinct from every other failure,
+ *   because every other failure is a reason to try again on the usual schedule
+ *   and this one is a reason not to. The runner turns it into a cooldown, so
+ *   the next tick skips the source instead of asking again in fifteen minutes —
+ *   which is what turns one 429 into a shop that rate-limits even robots.txt.
+ * @property {number=}     retryAfterSeconds
+ *   What the source said to wait, where it said so. Its own number, not a
+ *   guess: a shop that names a delay has told you the answer.
  */
 
 /**
@@ -77,14 +86,55 @@
  */
 
 /** A failure result. Helper so adapters cannot forget `complete: false`. */
-export function failed(error, note) {
-  return { ok: false, complete: false, listings: [], error: String(error), note };
+export function failed(error, note, { rateLimited, retryAfterSeconds } = {}) {
+  return {
+    ok: false, complete: false, listings: [], error: String(error), note,
+    rateLimited: rateLimited || undefined,
+    retryAfterSeconds: retryAfterSeconds ?? undefined,
+  };
 }
 
 /** A success result. `complete` must be asserted explicitly, never defaulted. */
-export function succeeded(listings, { complete, pages, note } = {}) {
+export function succeeded(listings, { complete, pages, note, rateLimited, retryAfterSeconds } = {}) {
   if (typeof complete !== 'boolean') {
     throw new Error('adapter must state whether the catalogue enumeration was complete');
   }
-  return { ok: true, complete, listings, pages, note };
+  return {
+    ok: true, complete, listings, pages, note,
+    rateLimited: rateLimited || undefined,
+    retryAfterSeconds: retryAfterSeconds ?? undefined,
+  };
+}
+
+/**
+ * What a `Retry-After` header actually asked for, in seconds.
+ *
+ * Two legal forms and both appear in the wild: a delay in seconds, and an HTTP
+ * date. Reading only the first treats "Retry-After: Wed, 21 Oct 2026 07:28:00
+ * GMT" as NaN and throws away the one number the source volunteered.
+ *
+ * Bounded, because a header is something a server sends and not something to
+ * obey without limit: a shop asking for a week is asking for longer than any
+ * sensible cooldown, and the cap is what stops one bad header parking a source
+ * for ever.
+ */
+export const MAX_RETRY_AFTER_SECONDS = 24 * 60 * 60;
+
+export function retryAfterSeconds(header, now = Date.now()) {
+  const raw = String(header ?? '').trim();
+  if (!raw) return null;
+
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds)) {
+    if (seconds <= 0) return null;
+    // Rounded UP, never to zero. A source that asked for a fraction of a second
+    // asked for something, and rounding that to 0 turns "wait" into "do not".
+    return Math.min(MAX_RETRY_AFTER_SECONDS, Math.max(1, Math.round(seconds)));
+  }
+
+  const at = new Date(raw).getTime();
+  if (!Number.isFinite(at)) return null;
+  const delta = Math.round((at - now) / 1000);
+  if (delta <= 0) return null;
+  return Math.min(MAX_RETRY_AFTER_SECONDS, delta);
 }

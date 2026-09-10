@@ -395,6 +395,9 @@ export type SourceRow = {
   last_run_ok: boolean | null;
   last_run_at: Date | null;
   last_run_error: string | null;
+  poll_interval_minutes: number | null;
+  /** Set when the source answered 429. Polling skips it until this passes. */
+  cooldown_until: Date | null;
 };
 
 export async function listSources() {
@@ -403,6 +406,7 @@ export async function listSources() {
             s.automation_allowed, s.automation_block_reason,
             s.permission_status::text as permission_status,
             s.config, s.last_good_count, s.last_good_poll_at,
+            s.poll_interval_minutes, s.cooldown_until,
             (select count(*) from listings l
               where l.source_id = s.id and l.status = 'active')::int as active_listings,
             r.ok as last_run_ok, r.started_at as last_run_at, r.error as last_run_error

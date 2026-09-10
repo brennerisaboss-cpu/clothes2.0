@@ -13,11 +13,20 @@
 //   * It never falls back to HTML if the feed is off. A shop without a feed
 //     belongs in the manual tier.
 
-import { succeeded, failed } from './contract.mjs';
+import { succeeded, failed, retryAfterSeconds } from './contract.mjs';
 import { parseRobots, isAllowed } from '../robots.mjs';
 
 const PAGE_SIZE = 250;
 const MAX_PAGES = 40; // 10k products; a hard stop so a pagination bug cannot loop.
+
+// How long this will sit and wait inside a single run when a shop names a
+// delay. Long enough to ride out the short bursts that are most of what a
+// `Retry-After` says, short enough that a poll cannot become a job that holds a
+// connection for an hour. Anything longer becomes a cooldown instead, which is
+// the right shape for it: waiting is what the next run is for.
+const MAX_INLINE_RETRY_SECONDS = 30;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export const id = 'shopify';
 
@@ -51,6 +60,26 @@ export async function fetchListings(config, deps = {}) {
       groups = parseRobots(await res.text());
     } else if (res.status === 404) {
       groups = [];
+    } else if (res.status === 429) {
+      // A rate limit is not a refusal, and calling it one was a category error.
+      //
+      // "Do-not-fetch" is the right reading of an UNREADABLE robots.txt — a 500,
+      // a timeout, something that leaves permission genuinely unknown, where
+      // failing closed is the only safe answer. A 429 is not that. It is the
+      // shop saying "you are asking too often", which is a statement about
+      // frequency and says nothing about permission at all.
+      //
+      // The run still stops here: permission cannot be confirmed this minute, so
+      // nothing may be fetched. But it stops as a rate limit, which the runner
+      // turns into a cooldown — where "do-not-fetch" simply came back in fifteen
+      // minutes and asked again, which is what escalated a busy shop into
+      // rate-limiting robots.txt in the first place.
+      const wait = retryAfterSeconds(res.headers?.get?.('retry-after'));
+      return failed(
+        'rate limited on robots.txt',
+        wait ? `the shop asked for ${wait}s` : 'no Retry-After given',
+        { rateLimited: true, retryAfterSeconds: wait ?? undefined },
+      );
     } else {
       return failed(`robots.txt returned ${res.status} — treated as do-not-fetch`);
     }
@@ -66,6 +95,9 @@ export async function fetchListings(config, deps = {}) {
 
   const maxPages = Math.min(config.maxPages ?? MAX_PAGES, MAX_PAGES);
   const listings = [];
+  // One inline retry per run, not per page: a shop that rate-limits twice is
+  // telling you something a third request will not change.
+  let retried = false;
   let page = 1;
   let complete = false;
 
@@ -82,10 +114,54 @@ export async function fetchListings(config, deps = {}) {
     }
 
     if (res.status === 429) {
-      // Back off and report incomplete. Partial data must never be treated as
-      // a full catalogue view.
-      const retryAfter = res.headers?.get?.('retry-after');
-      return failed(`rate limited on page ${page}`, retryAfter ? `Retry-After: ${retryAfter}` : undefined);
+      // KEEP WHAT WAS ALREADY COLLECTED.
+      //
+      // This used to return failed(), which discards the listings from every
+      // page that succeeded — and a failed poll writes nothing at all. So a
+      // shop whose catalogue runs past the point where it first rate-limits
+      // could never ingest anything: the next run started at page 1, re-fetched
+      // the same pages, and hit the same wall. Every fifteen minutes. That is
+      // not merely a source stuck at zero, it is the platform hammering a shop
+      // hard enough to make it start rate-limiting robots.txt too, which is
+      // exactly the failure this comment was written under.
+      //
+      // Partial data is safe here and always was, because `complete: false` is
+      // what the ingest actually keys on: an incomplete enumeration may add and
+      // re-price, and may never conclude that anything is gone. The pages that
+      // arrived are real observations. Throwing them away protected nothing.
+      const wait = retryAfterSeconds(res.headers?.get?.('retry-after'));
+
+      // One retry, and only when the shop named a delay short enough to sit
+      // through. Waiting on a number nobody gave would be guessing at the one
+      // thing the source is entitled to decide.
+      if (!retried && wait != null && wait <= MAX_INLINE_RETRY_SECONDS) {
+        retried = true;
+        await sleep(wait * 1000);
+        page--;                       // the same page, once more
+        continue;
+      }
+
+      // Nothing collected is still a failure. Reporting ok with an empty list
+      // is indistinguishable from a shop that has emptied out, and would be
+      // read as one — the same flaw the eBay adapters had. Something collected
+      // is real data with a partial view, which `complete: false` makes safe.
+      const detail =
+        `rate limited on page ${page}` + (wait ? `; the shop asked for ${wait}s` : '');
+
+      if (!listings.length) {
+        return failed(detail, undefined, {
+          rateLimited: true,
+          retryAfterSeconds: wait ?? undefined,
+        });
+      }
+
+      return succeeded(listings, {
+        complete: false,
+        pages: page - 1,
+        rateLimited: true,
+        retryAfterSeconds: wait ?? undefined,
+        note: `${detail}; keeping ${listings.length} from ${page - 1} page(s)`,
+      });
     }
     if (!res.ok) return failed(`page ${page} returned HTTP ${res.status}`);
 

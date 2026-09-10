@@ -4,15 +4,28 @@
 // and a real database, which is the only way to be confident the "never infer a
 // delisting from a failed poll" rule actually holds in the code that runs.
 
-import { ingestVeto, statusChangeVeto, detectRelists, planAbsences, RELIST_WINDOW_DAYS } from './ingest.mjs';
+import {
+  ingestVeto, statusChangeVeto, detectRelists, planAbsences, RELIST_WINDOW_DAYS,
+  cooldownMinutes,
+} from './ingest.mjs';
 import { planMatch } from './matching.mjs';
 import { assessCatalogue } from './plausibility.mjs';
 import { sublineById } from './brands/index.mjs';
 import { normalizeAlias } from './normalize.mjs';
 import { parseSize } from './size.mjs';
 
+// How fast a source is asked, when it has not said otherwise.
+//
+// Was 500ms — two requests a second, sustained, for as many pages as a
+// catalogue has. That is faster than a person browsing and faster than several
+// hosting setups will tolerate before a 429, and the cost of being wrong is
+// asymmetric: too slow adds seconds to a poll that runs on a timer, too fast
+// gets the source to stop answering. A shop's own Crawl-delay still raises it,
+// and an adapter's documented limit still raises it; nothing lowers it.
+const DEFAULT_MIN_INTERVAL_MS = 1500;
+
 class HostLimiter {
-  constructor(minIntervalMs = 500) {
+  constructor(minIntervalMs = DEFAULT_MIN_INTERVAL_MS) {
     this.last = 0;
     this.delayMs = minIntervalMs;
   }
@@ -145,6 +158,24 @@ export async function runPoll({
          where id = $1`,
       [runId, patch.ok, patch.count ?? null, patch.error ?? null, patch.suspectShrink ?? false],
     );
+
+    // A rate limit is the one outcome that is a statement about the SCHEDULE.
+    //
+    // Every other failure is a reason to try again on the usual cadence — a
+    // timeout, a bad gateway, a parse error may all have been transient. A 429
+    // is the source saying the cadence itself is the problem, and answering it
+    // by keeping the cadence is how one 429 becomes a shop that rate-limits
+    // robots.txt. Recorded here rather than in each adapter, because it is a
+    // decision about polling and adapters only report what they saw.
+    if (patch.rateLimited) {
+      const minutes = cooldownMinutes(patch.retryAfterSeconds);
+      await client.query(
+        `update sources set cooldown_until = now() + ($2 || ' minutes')::interval where id = $1`,
+        [source.id, String(minutes)],
+      );
+      patch.cooldownMinutes = minutes;
+    }
+
     return { runId, ...patch };
   };
 
@@ -193,6 +224,8 @@ export async function runPoll({
     return finish({
       ok: false,
       error: cannotWrite,
+      rateLimited: result.rateLimited,
+      retryAfterSeconds: result.retryAfterSeconds,
       count: result.listings?.length ?? 0,
       // A shrink is only suspicious where the poll claimed to have seen
       // everything. On a source that never claims that, a smaller number is
@@ -507,6 +540,10 @@ export async function runPoll({
 
   return finish({
     ok: true,
+    // Real data arrived AND the shop asked for room. Both are true and both
+    // matter: the listings are kept, and the next tick still leaves it alone.
+    rateLimited: result.rateLimited,
+    retryAfterSeconds: result.retryAfterSeconds,
     count: result.listings.length,
     kept: relevant.length,
     inserted,
